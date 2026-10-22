@@ -49,6 +49,17 @@ composer install
 php artisan serve
 ```
 
+## Git Branches
+
+This project uses three branches to organize development:
+
+- **`main`** — Main branch for the integrated project.
+- **`fe`** — Frontend development using React, Vite, Tailwind CSS, and Leaflet.
+- **`be`** — Backend development using Laravel REST API and PostgreSQL/PostGIS integration.
+
+Frontend and backend development are maintained separately and can be integrated into `main` when ready.
+```
+
 Configure the `.env` file and PostgreSQL/PostGIS connection before running the backend.
 
 ---
