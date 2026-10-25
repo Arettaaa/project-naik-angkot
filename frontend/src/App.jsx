@@ -6,8 +6,10 @@ function App() {
   return (
     <main className="min-h-screen bg-[#E8F6FF] text-hero-brown">
       <Navbar />
-      <Hero />
-      <Tentang />
+      <div className="mx-auto w-full max-w-[1920px] [container-type:inline-size]">
+        <Hero />
+        <Tentang />
+      </div>
     </main>
   )
 }

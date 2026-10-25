@@ -6,11 +6,10 @@ export default function Tentang() {
   return (
     <section
       id="tentang"
-      className="-mt-16 relative z-10 w-full overflow-hidden scroll-mt-24 bg-[#C7EEAF] lg:-mt-[13.8889cqw] lg:scroll-mt-[10cqw]"
+      className="relative z-10 -mt-[4.4444cqw] w-full overflow-hidden bg-transparent scroll-mt-24 lg:-mt-[25.625cqw] lg:scroll-mt-[10cqw]"
     >
       <div className="relative mx-auto w-full max-w-[1920px] [container-type:inline-size]">
         <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-          <div className="absolute inset-x-0 top-0 h-[18.75cqw] bg-[#1A936F]" />
           <img
             src={latarTentang}
             alt=""

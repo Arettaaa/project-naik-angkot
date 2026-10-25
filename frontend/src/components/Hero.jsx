@@ -5,14 +5,6 @@ import heroAnimation from '../assets/hero/hero-animasi.json'
 // Kecepatan animasi (dapat diubah sesuai preferensi)
 const KECEPATAN_ANIMASI = 1
 
-// Nilai pergeseran vertikal animasi latar (translateY).
-// Pada viewport desktop (1440px) dengan tinggi hero 950px dan preserveAspectRatio "xMidYMid slice",
-// pergeseran -25px (-translate-y-[25px]) memposisikan pucuk gedung dan matahari sejajar di bawah teks & pill,
-// serta jalan dan mobil melintas di tengah-bawah hero (sekitar Y = 750px - 850px),
-// tepat di atas batas bawah hero (950px) sebelum dipotong secara overflow-hidden,
-// persis seperti acuan desain Figma (Gambar 1).
-const TRANSLATE_Y_CLASS = '-translate-y-[25px]'
-
 export default function Hero() {
   const lottieRef = useRef(null)
   const [selectedRoute, setSelectedRoute] = useState(1)
@@ -66,11 +58,11 @@ export default function Hero() {
   return (
     <section
       aria-label="Hero Section"
-      className="relative w-full h-[850px] lg:h-[950px] overflow-hidden bg-gradient-to-b from-[#E8F6FF] to-white"
+      className="relative h-auto min-h-[79.8611cqw] w-full overflow-hidden bg-gradient-to-b from-[#E8F6FF] to-white lg:h-[84.3056cqw] lg:min-h-0"
     >
       {/* ===== ILUSTRASI ANIMASI LOTTIE (LATAR BELAKANG) ===== */}
       <div
-        className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
+        className="pointer-events-none absolute inset-0 z-0 select-none overflow-hidden"
         aria-hidden="true"
       >
         {!hasError && heroAnimation ? (
@@ -82,9 +74,9 @@ export default function Hero() {
             loop={!reducedMotion}
             speed={KECEPATAN_ANIMASI}
             rendererSettings={{
-              preserveAspectRatio: 'xMidYMid slice',
+              preserveAspectRatio: 'xMidYMid meet',
             }}
-            className={`w-full h-full object-cover ${TRANSLATE_Y_CLASS}`}
+            className="absolute left-[-0.8333cqw] top-[-20cqw] aspect-[1464/1438] h-[99.8611cqw] w-[101.6667cqw] max-w-none lg:top-[-15.5556cqw]"
             onError={() => setHasError(true)}
           />
         ) : (
@@ -94,9 +86,9 @@ export default function Hero() {
       </div>
 
       {/* ===== KONTEN TEKS & TOMBOL PEMILIH (LAPISAN DEPAN) ===== */}
-      <div className="relative z-10 w-[min(1201px,calc(100%-32px))] mx-auto pt-[140px] sm:pt-[170px] lg:pt-[210px] flex flex-col items-start">
+      <div className="relative z-10 mx-auto flex w-[min(1201px,calc(100%-32px))] flex-col items-start pt-[4cqw] pb-[4.4444cqw] sm:pt-[11.8056cqw] lg:pb-0 lg:pt-[14.5833cqw]">
         {/* Judul Utama */}
-        <h1 className="font-display text-4xl sm:text-5xl lg:text-[60px] font-extrabold leading-tight lg:leading-[54.45px] text-hero-brown tracking-tight lg:whitespace-nowrap">
+        <h1 className="font-display text-4xl sm:text-5xl lg:text-[60px] font-extrabold leading-tight tracking-tight text-hero-brown lg:leading-[3.78125cqw] lg:whitespace-nowrap">
           NAIK Angkot, Anti Nyasar.
         </h1>
 
