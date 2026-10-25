@@ -1,4 +1,5 @@
 import latarTentang from '../assets/tentang/latar-tentang.svg'
+import latarFitur from '../assets/fitur/latar-fitur.svg'
 import petaBogor from '../assets/tentang/peta-bogor.svg'
 import KartuTumpuk from './KartuTumpuk'
 
@@ -15,9 +16,14 @@ export default function Tentang() {
             alt=""
             className="absolute -left-[0.3472cqw] top-0 w-[100.6944cqw] max-w-none select-none"
           />
+          <img
+            src={latarFitur}
+            alt=""
+            className="absolute -left-[0.4167cqw] top-[43.2639cqw] w-[100cqw] max-w-none select-none"
+          />
         </div>
 
-        <div className="relative flex flex-col items-center gap-8 px-5 pb-20 pt-40 sm:px-8 lg:block lg:h-[86.1111cqw] lg:px-0 lg:pb-0 lg:pt-0">
+        <div className="relative flex flex-col items-center gap-8 px-5 pb-20 pt-40 sm:px-8 lg:block lg:h-[81.25cqw] lg:px-0 lg:pb-0 lg:pt-0">
           <h2 className="w-full max-w-[560px] self-start font-display text-[clamp(2rem,8vw,3.25rem)] font-bold leading-[0.93] text-tentang-dark lg:absolute lg:left-[8.2639cqw] lg:top-[21.7361cqw] lg:w-[31.5278cqw] lg:max-w-none lg:text-[4.1667cqw] lg:leading-[3.8417cqw] lg:whitespace-nowrap">
             <span className="block whitespace-nowrap">Rute Angkot</span>
             <span className="block whitespace-nowrap">dalam Satu Layar.</span>

@@ -25,7 +25,7 @@ export default function Hero() {
       setReducedMotion(e.matches)
       if (lottieRef.current) {
         if (e.matches) {
-          lottieRef.current.goToAndStop(0, true)
+          lottieRef.current.stop()
         } else {
           lottieRef.current.setSpeed(KECEPATAN_ANIMASI)
           lottieRef.current.play()
@@ -42,7 +42,7 @@ export default function Hero() {
     if (lottieRef.current) {
       lottieRef.current.setSpeed(KECEPATAN_ANIMASI)
       if (reducedMotion) {
-        lottieRef.current.goToAndStop(0, true)
+        lottieRef.current.stop()
       }
     }
   }, [reducedMotion])
@@ -69,7 +69,6 @@ export default function Hero() {
           <Lottie
             lottieRef={lottieRef}
             src={heroAnimation}
-            animationData={heroAnimation}
             autoplay={!reducedMotion}
             loop={!reducedMotion}
             speed={KECEPATAN_ANIMASI}

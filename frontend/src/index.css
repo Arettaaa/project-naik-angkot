@@ -26,6 +26,71 @@ html {
   font-optical-sizing: auto;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .fitur-tab-enter {
+    animation: none;
+  }
+}
+
+.fitur-tab-enter {
+  animation: fitur-tab-enter 250ms ease-out both;
+}
+
+.fitur-tablist {
+  scrollbar-width: none;
+}
+
+.fitur-tablist::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes fitur-tab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.35cqw);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fitur-map .leaflet-container {
+  background: #e8f6f8;
+  font-family: var(--font-sans);
+}
+
+.fitur-map .leaflet-control-attribution {
+  font-size: max(8px, 0.55cqw);
+}
+
+.fitur-map .leaflet-control-zoom a {
+  width: max(24px, 4cqw);
+  height: max(24px, 4cqw);
+  line-height: max(24px, 4cqw);
+  color: #0d404f;
+  font-size: max(14px, 2cqw);
+}
+
+.fitur-map .feature-stop-label.leaflet-tooltip {
+  border: 0;
+  border-radius: max(2px, 0.3cqw);
+  padding: max(2px, 0.25cqw) max(4px, 0.55cqw);
+  color: #0d404f;
+  font-size: max(8px, 1.2cqw);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgb(13 64 79 / 12%);
+}
+
+.fitur-map .feature-stop-label.leaflet-tooltip-right::before {
+  border-right-color: #fff;
+}
+
 body {
   min-width: 320px;
   margin: 0;
