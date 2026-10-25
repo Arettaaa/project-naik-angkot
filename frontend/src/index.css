@@ -19,6 +19,13 @@
   --color-card-green: #09B58D;
   --color-card-yellow: #FFC700;
   --color-road-green: #1A936F;
+  --color-guide-green: #2F6B4F;
+  --color-guide-hill: #3BA479;
+  --color-guide-sky: #D7ECFA;
+  --color-guide-badge: #EAF4EE;
+  --color-guide-location: #38BDF8;
+  --color-guide-destination: #FFAB2E;
+  --color-guide-recommendation: #A586FF;
 }
 
 html {
@@ -89,6 +96,64 @@ html {
 
 .fitur-map .feature-stop-label.leaflet-tooltip-right::before {
   border-right-color: #fff;
+}
+
+.cara-kerja-line {
+  fill: none;
+  stroke: #226b4d;
+  stroke-dasharray: 1 10;
+  stroke-linecap: round;
+  stroke-width: 5;
+  transition: opacity 700ms ease;
+}
+
+.cara-kerja-section {
+  background: linear-gradient(180deg, #F2F9FE 0%, #D7ECFA 25%, #D7ECFA 100%);
+}
+
+.cara-kerja-step {
+  --cara-step-offset: 2.7778cqw;
+  opacity: 0;
+  transform: translateY(2.7778cqw);
+  transition:
+    opacity 600ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cara-kerja-step.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.cara-kerja-dot {
+  opacity: 0;
+  transition: opacity 450ms ease;
+}
+
+.cara-kerja-dot.is-visible {
+  opacity: 1;
+}
+
+@media (max-width: 1023px) {
+  .cara-kerja-line {
+    stroke-dasharray: 1 5.5;
+    stroke-width: 2;
+  }
+
+  .cara-kerja-step {
+    --cara-step-offset: 24px;
+    transform: translateY(24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cara-kerja-step,
+  .cara-kerja-line,
+  .cara-kerja-dot {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 
 body {

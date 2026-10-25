@@ -2,6 +2,7 @@ import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import Tentang from './components/Tentang'
 import Fitur from './components/Fitur'
+import CaraKerja from './components/CaraKerja'
 
 function App() {
   return (
@@ -11,6 +12,7 @@ function App() {
         <Hero />
         <Tentang />
         <Fitur />
+        <CaraKerja />
       </div>
     </main>
   )
