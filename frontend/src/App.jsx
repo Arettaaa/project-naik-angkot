@@ -3,6 +3,8 @@ import Hero from './components/Hero'
 import Tentang from './components/Tentang'
 import Fitur from './components/Fitur'
 import CaraKerja from './components/CaraKerja'
+import CTASection from './components/CTASection'
+import Footer from './components/Footer'
 
 function App() {
   return (
@@ -13,7 +15,9 @@ function App() {
         <Tentang />
         <Fitur />
         <CaraKerja />
+        <CTASection />
       </div>
+      <Footer />
     </main>
   )
 }

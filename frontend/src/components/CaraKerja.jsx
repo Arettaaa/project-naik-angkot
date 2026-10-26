@@ -47,7 +47,7 @@ export default function CaraKerja() {
       ref={sectionRef}
       id="panduan"
       aria-labelledby="cara-kerja-title"
-      className={`cara-kerja-section relative -mt-[7.5694cqw] min-h-[calc(100vh+160px)] w-full overflow-x-clip pb-40 pt-36 scroll-mt-[123px] max-lg:pt-32 lg:h-[94.0278cqw] lg:min-h-0 lg:overflow-y-hidden lg:pb-0 lg:pt-0 lg:scroll-mt-[8.5417cqw]${isResetting ? ' is-resetting' : ''}`}
+      className={`cara-kerja-section relative -mt-[7.5694cqw] min-h-[calc(100vh+160px)] w-full overflow-x-clip pb-40 pt-36 scroll-mt-[123px] max-lg:pt-32 lg:h-[94.0278cqw] lg:min-h-0 lg:overflow-clip lg:pb-0 lg:pt-0 lg:scroll-mt-[8.5417cqw] min-[1920px]:-mt-[7.5694vw] min-[1920px]:left-1/2 min-[1920px]:-translate-x-1/2 min-[1920px]:w-[calc(100vw-15px)] min-[1920px]:max-w-[2560px] min-[1920px]:[container-type:inline-size] min-[1920px]:h-[94.0278vw]${isResetting ? ' is-resetting' : ''}`}
     >
       <div
         className="pointer-events-none absolute inset-x-0 top-[53cqw] bottom-0 z-0 bg-guide-hill lg:hidden"
@@ -57,7 +57,7 @@ export default function CaraKerja() {
         src={adegan}
         alt=""
         aria-hidden="true"
-        className="pointer-events-none absolute left-[-7.0833cqw] top-0 z-[1] h-[94.0972cqw] w-[100cqw] max-w-none select-none max-lg:left-[-40cqw] max-lg:h-auto max-lg:w-[180cqw]"
+        className="pointer-events-none absolute left-0 top-0 z-[1] h-auto w-full max-w-none select-none"
       />
 
       <div className="pointer-events-none absolute inset-0 z-[4] hidden lg:block" aria-hidden="true">
@@ -104,7 +104,7 @@ export default function CaraKerja() {
 
         <h2
           id="cara-kerja-title"
-          className="mt-5 text-center font-display text-[clamp(2.5rem,8vw,4rem)] font-bold leading-none text-[#0D404F] lg:absolute lg:left-[26.8403cqw] lg:top-[16.5278cqw] lg:mt-0 lg:w-[46.3194cqw] lg:text-[5cqw] lg:leading-[4.9396cqw]"
+          className="mt-5 text-center font-display text-[clamp(2.5rem,8vw,4rem)] font-bold leading-none text-[#0D404F] lg:absolute lg:left-[26.8403cqw] lg:top-[16.5278cqw] lg:mt-0 lg:w-[46.3194cqw] lg:text-[5cqw] lg:leading-[4.9396cqw] lg:font-optical-sizing-auto lg:tracking-[-0.03em]"
         >
           Cara Kerja
         </h2>
