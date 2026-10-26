@@ -6,6 +6,8 @@ import rumahKiri from '../assets/carakerja/rumah-kiri.svg'
 import langkah from '../data/langkah'
 import useScrollSteps from '../hooks/useScrollSteps'
 
+const JARAK_MUNCUL_PX = 40
+
 const POHON = [
   { left: 68.75, top: 22.7083 },
   { left: 42.5694, top: 28.3333 },
@@ -55,20 +57,20 @@ function Sparkles() {
 export default function CaraKerja() {
   const sectionRef = useRef(null)
   const stepRefs = useRef([])
-  const visibleCount = useScrollSteps(sectionRef, stepRefs, langkah.length)
+  const { visibleCount, isResetting } = useScrollSteps(sectionRef, stepRefs, langkah.length)
 
   return (
     <section
       ref={sectionRef}
       id="panduan"
       aria-labelledby="cara-kerja-title"
-      className="cara-kerja-section relative -mt-[7.5694cqw] min-h-[calc(100vh+160px)] w-full overflow-x-clip pb-40 pt-36 scroll-mt-[123px] max-lg:pt-32 lg:h-[94.0278cqw] lg:min-h-0 lg:overflow-y-hidden lg:pb-0 lg:pt-0 lg:scroll-mt-[8.5417cqw]"
+      className={`cara-kerja-section relative -mt-[7.5694cqw] min-h-[calc(100vh+160px)] w-full overflow-x-clip pb-40 pt-36 scroll-mt-[123px] max-lg:pt-32 lg:h-[94.0278cqw] lg:min-h-0 lg:overflow-y-hidden lg:pb-0 lg:pt-0 lg:scroll-mt-[8.5417cqw]${isResetting ? ' is-resetting' : ''}`}
     >
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
         <img
           src={rumahKiri}
           alt=""
-          className="absolute left-[-7.0833cqw] top-[3.7986cqw] h-[26.6667cqw] w-[41.3125cqw] max-w-none select-none object-fill max-lg:left-[-12cqw] max-lg:top-[1cqw] max-lg:h-auto max-lg:w-[48cqw]"
+          className="absolute left-[-7.0833cqw] top-[6.1806cqw] h-[26.6667cqw] w-[41.3125cqw] max-w-none select-none object-fill max-lg:left-[-12cqw] max-lg:top-[1cqw] max-lg:h-auto max-lg:w-[48cqw]"
         />
         <img
           src={rumahKanan}
@@ -166,6 +168,7 @@ export default function CaraKerja() {
                 style={{
                   '--step-left': `${position.left}cqw`,
                   '--step-top': `${position.top}cqw`,
+                  '--cara-step-offset': `${JARAK_MUNCUL_PX}px`,
                   opacity: visibleCount > index ? 1 : 0,
                   transform: visibleCount > index ? 'translateY(0)' : 'translateY(var(--cara-step-offset))',
                 }}

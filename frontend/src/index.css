@@ -112,7 +112,7 @@ html {
 }
 
 .cara-kerja-step {
-  --cara-step-offset: 2.7778cqw;
+  --cara-step-offset: 40px;
   opacity: 0;
   transform: translateY(2.7778cqw);
   transition:
@@ -134,16 +134,18 @@ html {
   opacity: 1;
 }
 
+.cara-kerja-section.is-resetting .cara-kerja-step,
+.cara-kerja-section.is-resetting .cara-kerja-dot,
+.cara-kerja-section.is-resetting .cara-kerja-line {
+  transition: none !important;
+}
+
 @media (max-width: 1023px) {
   .cara-kerja-line {
     stroke-dasharray: 1 5.5;
     stroke-width: 2;
   }
 
-  .cara-kerja-step {
-    --cara-step-offset: 24px;
-    transform: translateY(24px);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
