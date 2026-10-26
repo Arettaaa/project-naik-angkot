@@ -21,7 +21,7 @@
   --color-road-green: #1A936F;
   --color-guide-green: #2F6B4F;
   --color-guide-hill: #3BA479;
-  --color-guide-sky: #D7ECFA;
+  --color-guide-sky: #F2F9FE;
   --color-guide-badge: #EAF4EE;
   --color-guide-location: #38BDF8;
   --color-guide-destination: #FFAB2E;
@@ -107,8 +107,16 @@ html {
   transition: opacity 700ms ease;
 }
 
+.cara-kerja-route {
+  transition: clip-path 700ms ease;
+}
+
+#fitur {
+  background-color: var(--color-guide-sky);
+}
+
 .cara-kerja-section {
-  background: linear-gradient(180deg, #F2F9FE 0%, #D7ECFA 25%, #D7ECFA 100%);
+  background-color: var(--color-guide-sky);
 }
 
 .cara-kerja-step {
@@ -136,7 +144,8 @@ html {
 
 .cara-kerja-section.is-resetting .cara-kerja-step,
 .cara-kerja-section.is-resetting .cara-kerja-dot,
-.cara-kerja-section.is-resetting .cara-kerja-line {
+.cara-kerja-section.is-resetting .cara-kerja-line,
+.cara-kerja-section.is-resetting .cara-kerja-route {
   transition: none !important;
 }
 
@@ -151,7 +160,8 @@ html {
 @media (prefers-reduced-motion: reduce) {
   .cara-kerja-step,
   .cara-kerja-line,
-  .cara-kerja-dot {
+  .cara-kerja-dot,
+  .cara-kerja-route {
     opacity: 1;
     transform: none;
     transition: none;
