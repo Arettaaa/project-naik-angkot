@@ -58,7 +58,7 @@ export default function Hero() {
   return (
     <section
       aria-label="Hero Section"
-      className="relative h-auto min-h-[79.8611cqw] w-full overflow-hidden bg-gradient-to-b from-[#E8F6FF] to-white lg:h-[84.3056cqw] lg:min-h-0"
+      className="hero-section relative h-auto min-h-[clamp(520px,100cqw,760px)] w-full overflow-hidden bg-[linear-gradient(180deg,#E8F6FF_0%,#E8F6FF_56%,#1A936F_56%,#1A936F_100%)] min-[900px]:min-h-[calc(80cqw+80px)] lg:h-[84.3056cqw] lg:min-h-0"
     >
       {/* ===== ILUSTRASI ANIMASI LOTTIE (LATAR BELAKANG) ===== */}
       <div
@@ -75,7 +75,7 @@ export default function Hero() {
             rendererSettings={{
               preserveAspectRatio: 'xMidYMid meet',
             }}
-            className="absolute left-[-0.8333cqw] top-[-20cqw] aspect-[1464/1438] h-[99.8611cqw] w-[101.6667cqw] max-w-none lg:top-[-15.5556cqw]"
+            className="hero-illustration absolute left-[-0.8333cqw] top-[calc(210px-20cqw)] aspect-[1464/1438] h-[99.8611cqw] w-[101.6667cqw] max-w-none sm:top-[calc(100px-20cqw)] min-[900px]:max-lg:-translate-y-[30px] lg:top-[-15.5556cqw]"
             onError={() => setHasError(true)}
           />
         ) : (
@@ -85,25 +85,25 @@ export default function Hero() {
       </div>
 
       {/* ===== KONTEN TEKS & TOMBOL PEMILIH (LAPISAN DEPAN) ===== */}
-      <div className="relative z-10 mx-auto flex w-[min(1201px,calc(100%-32px))] flex-col items-start pt-[4cqw] pb-[4.4444cqw] sm:pt-[11.8056cqw] lg:pb-0 lg:pt-[14.5833cqw]">
+      <div className="hero-content relative z-10 mx-auto flex w-[min(1201px,calc(100%-32px))] flex-col items-start pt-[4.75rem] pb-[2.5cqw] sm:pt-[max(5rem,11.8056cqw)] sm:pb-[4.4444cqw] lg:pb-0 lg:pt-[14.5833cqw]">
         {/* Judul Utama */}
-        <h1 className="font-display text-4xl sm:text-5xl lg:text-[60px] font-extrabold leading-tight tracking-tight text-hero-brown lg:leading-[3.78125cqw] lg:whitespace-nowrap">
+        <h1 className="font-display text-3xl sm:text-5xl lg:text-[60px] font-extrabold leading-tight tracking-tight text-hero-brown lg:leading-[3.78125cqw] lg:whitespace-nowrap">
           NAIK Angkot, Anti Nyasar.
         </h1>
 
         {/* Subjudul */}
-        <p className="mt-2.5 lg:mt-2 max-w-[753px] font-sans text-xl sm:text-2xl lg:text-[36px] font-medium leading-snug lg:leading-[54.45px] text-hero-brown">
+        <p className="mt-2 lg:mt-2 max-w-[753px] font-sans text-lg sm:text-2xl lg:text-[36px] font-medium leading-snug lg:leading-[54.45px] text-hero-brown">
           Eksplorasi rute, cek titik transit, dan pantau{' '}
           <br className="hidden lg:inline" />
           perjalanan keliling Kota Bogor dari satu layar.
         </p>
 
         {/* Tombol Pemilih Angkot (Pill) */}
-        <div className="mt-6 lg:mt-5 inline-flex items-center gap-[10px] h-[56px] px-5 min-w-[320px] w-fit rounded-full bg-hero-pill border-[1.28px] border-white/30 backdrop-blur-[10px] shadow-sm">
+        <div className="mt-3 inline-flex h-[clamp(48px,13.3vw,52px)] max-w-full w-[min(300px,100%)] min-w-0 items-center justify-between gap-[clamp(6px,2vw,10px)] rounded-full border-[1.28px] border-white/30 bg-hero-pill px-[clamp(10px,3.2vw,20px)] shadow-sm backdrop-blur-[10px] max-[360px]:mt-1 max-[360px]:h-10 sm:mt-6 sm:h-[56px] sm:w-[min(360px,100%)] sm:min-w-[320px] lg:mt-5">
           {/* Ikon Pin + Label Cari Rute Sekarang */}
           <a
             href="#rute"
-            className="inline-flex items-center gap-[10px] text-hero-brown hover:opacity-85 transition-opacity"
+            className="inline-flex items-center gap-[clamp(6px,2vw,10px)] text-hero-brown transition-opacity hover:opacity-85"
           >
             {/* Ikon Pin Lokasi (SVG Inline 16px, garis tanpa isi, stroke 1.7px) */}
             <svg
@@ -130,20 +130,20 @@ export default function Hero() {
                 strokeLinejoin="round"
               />
             </svg>
-            <span className="font-inter text-[18px] font-semibold leading-[24px] whitespace-nowrap">
+            <span className="whitespace-nowrap font-inter text-[clamp(14px,3.8vw,16px)] font-semibold leading-5 sm:text-[18px] sm:leading-[24px]">
               Cari Rute Sekarang
             </span>
           </a>
 
           {/* Garis Pemisah Vertikal */}
-          <span className="h-5 w-[1.28px] bg-hero-brown/25 mx-1" aria-hidden="true" />
+          <span className="mx-[clamp(2px,1vw,4px)] h-5 w-[1.28px] bg-hero-brown/25" aria-hidden="true" />
 
           {/* Navigasi Rute Angkot (< 01 >) */}
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={handlePrevRoute}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-hero-brown hover:bg-black/5 active:scale-95 transition-all"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-hero-brown transition-all hover:bg-black/5 active:scale-95 sm:h-7 sm:w-7"
               aria-label="Pilih rute sebelumnya"
             >
               <svg
@@ -164,14 +164,14 @@ export default function Hero() {
               </svg>
             </button>
 
-            <span className="font-inter text-[18px] font-semibold leading-[24px] text-hero-brown select-none min-w-[24px] text-center">
+            <span className="min-w-[24px] select-none text-center font-inter text-[16px] font-semibold leading-5 text-hero-brown sm:text-[18px] sm:leading-[24px]">
               {String(selectedRoute).padStart(2, '0')}
             </span>
 
             <button
               type="button"
               onClick={handleNextRoute}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-hero-brown hover:bg-black/5 active:scale-95 transition-all"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-hero-brown transition-all hover:bg-black/5 active:scale-95 sm:h-7 sm:w-7"
               aria-label="Pilih rute berikutnya"
             >
               <svg

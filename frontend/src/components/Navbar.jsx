@@ -12,7 +12,7 @@ function HamburgerIcon({ open }) {
     return (
       <svg
         aria-hidden="true"
-        className="h-6 w-6"
+        className="h-5 w-5"
         fill="none"
         stroke="currentColor"
         strokeLinecap="round"
@@ -27,7 +27,7 @@ function HamburgerIcon({ open }) {
   return (
     <svg
       aria-hidden="true"
-      className="h-6 w-6"
+      className="h-5 w-5"
       fill="none"
       stroke="currentColor"
       strokeLinecap="round"
@@ -94,14 +94,14 @@ export default function Navbar() {
       {/* ===== MOBILE NAVBAR (< 1024px) ===== */}
       <nav
         aria-label="Navigasi utama"
-        className="fixed top-4 left-4 right-4 z-50
+        className="fixed top-3 left-4 right-4 z-50
           rounded-[55px] border border-border-nav bg-white/60
-          px-[26px] h-[56px]
+          px-4 h-12 sm:top-4 sm:px-5 sm:h-[52px]
           flex lg:hidden items-center"
       >
         {/* Logo */}
         <a href="#" aria-label="Naik Angkot — Beranda">
-          <img src={logoNaik} alt="NAIK logo" className="h-6 w-auto" />
+          <img src={logoNaik} alt="NAIK logo" className="h-5 w-auto sm:h-[22px]" />
         </a>
 
         <div className="flex-1" />
@@ -111,7 +111,7 @@ export default function Navbar() {
           type="button"
           aria-expanded={menuOpen}
           aria-label={menuOpen ? 'Tutup navigasi' : 'Buka navigasi'}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-dark"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-dark"
           onClick={() => setMenuOpen(!menuOpen)}
         >
           <HamburgerIcon open={menuOpen} />
@@ -121,7 +121,7 @@ export default function Navbar() {
       {/* Mobile dropdown panel */}
       {menuOpen && (
         <div
-          className="fixed top-[76px] left-4 right-4 z-50
+          className="fixed top-[68px] left-4 right-4 z-50 max-h-[calc(100dvh-80px)] overflow-y-auto sm:top-[76px]
             rounded-[20px] border border-border-nav bg-white
             p-4 flex flex-col gap-2
             lg:hidden"
@@ -148,4 +148,3 @@ export default function Navbar() {
     </>
   )
 }
-

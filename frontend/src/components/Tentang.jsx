@@ -7,10 +7,10 @@ export default function Tentang() {
   return (
     <section
       id="tentang"
-      className="relative z-10 -mt-[4.4444cqw] w-full overflow-hidden bg-transparent scroll-mt-24 lg:-mt-[25.625cqw] lg:scroll-mt-[10cqw]"
+      className="relative z-10 w-full overflow-hidden bg-transparent scroll-mt-24 lg:scroll-mt-[10cqw]"
     >
       <div className="relative mx-auto w-full max-w-[1920px] [container-type:inline-size]">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
           <img
             src={latarTentang}
             alt=""
@@ -23,13 +23,13 @@ export default function Tentang() {
           />
         </div>
 
-        <div className="relative flex flex-col items-center gap-8 px-5 pb-20 pt-40 sm:px-8 lg:block lg:h-[81.25cqw] lg:px-0 lg:pb-0 lg:pt-0">
-          <h2 className="w-full max-w-[560px] self-start font-display text-[clamp(2rem,8vw,3.25rem)] font-bold leading-[0.93] text-tentang-dark lg:absolute lg:left-[8.2639cqw] lg:top-[21.7361cqw] lg:w-[31.5278cqw] lg:max-w-none lg:text-[4.1667cqw] lg:leading-[3.8417cqw] lg:whitespace-nowrap">
+        <div className="relative z-10 flex flex-col items-center gap-6 px-5 pb-20 pt-[max(9.5rem,28cqw)] sm:px-8 sm:pt-[max(9.5rem,38cqw)] lg:block lg:h-[90cqw] lg:px-0 lg:pb-0 lg:pt-0">
+          <h2 className="w-full max-w-[560px] self-start font-display text-[clamp(2rem,8vw,3.25rem)] font-bold leading-[0.93] text-tentang-dark lg:absolute lg:left-[8.2639cqw] lg:top-[38.5cqw] lg:w-[31.5278cqw] lg:max-w-none lg:text-[4.1667cqw] lg:leading-[3.8417cqw] lg:whitespace-nowrap">
             <span className="block whitespace-nowrap">Rute Angkot</span>
             <span className="block whitespace-nowrap">dalam Satu Layar.</span>
           </h2>
 
-          <p className="w-full max-w-[560px] self-start font-sans text-[clamp(0.875rem,4vw,1.75rem)] font-medium leading-[1.45] text-tentang-dark lg:absolute lg:left-[8.2639cqw] lg:top-[30.6944cqw] lg:w-[50.7833cqw] lg:max-w-none lg:text-[2.5cqw] lg:leading-[3.8417cqw]">
+          <p className="w-full max-w-[560px] self-start font-sans text-[clamp(0.875rem,4vw,1.75rem)] font-medium leading-[1.45] text-tentang-dark lg:absolute lg:left-[8.2639cqw] lg:top-[47.5cqw] lg:w-[39.1cqw] lg:max-w-none lg:text-[2.5cqw] lg:leading-[3.8417cqw]">
             Tak perlu lagi bingung warna atau jurusan.
             <br />
             Semua info trayek Kota Bogor ada di
@@ -46,7 +46,7 @@ export default function Tentang() {
             />
           </div>
 
-          <div className="flex w-full justify-center lg:absolute lg:left-[13.4259cqw] lg:top-[47.2917cqw] lg:block">
+          <div className="flex w-full justify-center lg:absolute lg:left-[13.4259cqw] lg:top-[68cqw] lg:block">
             <KartuTumpuk />
           </div>
         </div>
