@@ -58,7 +58,7 @@ export default function Hero() {
   return (
     <section
       aria-label="Hero Section"
-      className="hero-section relative h-auto min-h-[clamp(520px,100cqw,760px)] w-full overflow-hidden bg-[linear-gradient(180deg,#E8F6FF_0%,#E8F6FF_56%,#1A936F_56%,#1A936F_100%)] min-[900px]:min-h-[calc(80cqw+80px)] lg:h-[84.3056cqw] lg:min-h-0"
+      className="hero-section relative h-auto min-h-[calc(clamp(520px,100cqw,760px)+16cqw)] w-full overflow-hidden bg-[linear-gradient(180deg,#E8F6FF_0%,#E8F6FF_56%,#1A936F_56%,#1A936F_100%)] min-[900px]:min-h-[calc(80cqw+80px+16cqw)] lg:h-[calc(84.3056cqw+16cqw)] lg:min-h-0"
     >
       {/* ===== ILUSTRASI ANIMASI LOTTIE (LATAR BELAKANG) ===== */}
       <div
@@ -99,7 +99,7 @@ export default function Hero() {
         </p>
 
         {/* Tombol Pemilih Angkot (Pill) */}
-        <div className="mt-3 inline-flex h-[clamp(48px,13.3vw,52px)] max-w-full w-[min(300px,100%)] min-w-0 items-center justify-between gap-[clamp(6px,2vw,10px)] rounded-full border-[1.28px] border-white/30 bg-hero-pill px-[clamp(10px,3.2vw,20px)] shadow-sm backdrop-blur-[10px] max-[360px]:mt-1 max-[360px]:h-10 sm:mt-6 sm:h-[56px] sm:w-[min(360px,100%)] sm:min-w-[320px] lg:mt-5">
+        <div className="mt-3 inline-flex h-[clamp(48px,13.3vw,52px)] max-w-full w-[min(320px,100%)] min-w-0 items-center justify-between gap-[clamp(4px,1.5vw,8px)] rounded-full border-[1.28px] border-white/30 bg-hero-pill px-[clamp(10px,3.2vw,20px)] pr-[clamp(22px,6vw,30px)] shadow-sm backdrop-blur-[10px] max-[360px]:mt-1 max-[360px]:h-10 sm:mt-6 sm:h-[56px] sm:w-[min(360px,100%)] sm:min-w-[320px] lg:mt-5">
           {/* Ikon Pin + Label Cari Rute Sekarang */}
           <a
             href="#rute"
@@ -130,7 +130,7 @@ export default function Hero() {
                 strokeLinejoin="round"
               />
             </svg>
-            <span className="whitespace-nowrap font-inter text-[clamp(14px,3.8vw,16px)] font-semibold leading-5 sm:text-[18px] sm:leading-[24px]">
+            <span className="whitespace-nowrap font-inter text-[clamp(14px,3.8vw,16px)] max-[360px]:text-[13px] font-semibold leading-5 sm:text-[18px] sm:leading-[24px]">
               Cari Rute Sekarang
             </span>
           </a>
@@ -139,7 +139,7 @@ export default function Hero() {
           <span className="mx-[clamp(2px,1vw,4px)] h-5 w-[1.28px] bg-hero-brown/25" aria-hidden="true" />
 
           {/* Navigasi Rute Angkot (< 01 >) */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 sm:gap-1.5">
             <button
               type="button"
               onClick={handlePrevRoute}

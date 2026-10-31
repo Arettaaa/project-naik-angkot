@@ -45,7 +45,7 @@ html {
 
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
   .hero-section {
-    min-height: max(760px, 105cqw);
+    min-height: calc(max(760px, 105cqw) + 16cqw);
   }
 
   .hero-illustration {
@@ -60,30 +60,30 @@ html {
 
 /* Align the SVG crest with the Lottie road lane at each responsive scale. */
 .hero-section + #tentang {
-  margin-top: calc(210px + 54.725cqw - max(520px, 100cqw));
+  margin-top: calc(210px + 54.725cqw - max(520px, 100cqw) - 16cqw);
 }
 
 @media (min-width: 640px) {
   .hero-section + #tentang {
-    margin-top: calc(100px + 54.725cqw - max(520px, min(760px, 100cqw)));
+    margin-top: calc(100px + 54.725cqw - max(520px, min(760px, 100cqw)) - 16cqw);
   }
 }
 
 @media (min-width: 900px) {
   .hero-section + #tentang {
-    margin-top: calc(-10px - 25.275cqw);
+    margin-top: calc(-10px - 41.275cqw);
   }
 }
 
 @media (min-width: 1024px) {
   .hero-section + #tentang {
-    margin-top: -25.1366cqw;
+    margin-top: -41.1366cqw;
   }
 }
 
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
   .hero-section + #tentang {
-    margin-top: calc(clamp(48px, 14vh, 72px) + 74.725cqw - max(760px, 105cqw));
+    margin-top: calc(clamp(48px, 14vh, 72px) + 74.725cqw - max(760px, 105cqw) - 16cqw);
   }
 }
 
