@@ -7,10 +7,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-/**
- * API data NAIK (Navigasi Angkot) — baca langsung dari schema PostGIS "naik".
- * Semua koordinat EPSG:4326 (lon, lat). GeoJSON dibangun di PostgreSQL biar cepat.
- */
 class TrayekController extends Controller
 {
     /** Ekspresi garis tunggal dari MultiLineString (dipakai ST_LineLocatePoint). */
@@ -120,6 +116,7 @@ class TrayekController extends Controller
                 FROM naik.rute_ruas_jalan rr JOIN naik.ruas_jalan j ON j.ruas_id = rr.ruas_id
                 WHERE rr.rute_id = ? ORDER BY rr.urutan", [$r->rute_id]);
             $r->urutan_jalan = $this->urutanJalan($jalan);
+            $r->panjang_m = (float) $r->panjang_m;
             $r->halte = explode(' > ', $r->lintasan);
             unset($r->lintasan);
         }
@@ -174,7 +171,8 @@ class TrayekController extends Controller
             FROM naik.v_ruas_kepadatan
             WHERE nama_jalan NOT LIKE 'Jalan lingkungan%' AND nama_jalan NOT LIKE 'Jalan akses%'
               AND nama_jalan NOT LIKE 'Jalan lokal%' AND nama_jalan NOT LIKE 'Jalan penghubung%'
-            GROUP BY nama_jalan HAVING MAX(jumlah_rute) >= 2
+            GROUP BY nama_jalan
+            HAVING MAX(jumlah_rute) >= 2 AND COALESCE(SUM(panjang_m) FILTER (WHERE jumlah_rute >= 2), 0) >= 100
             ORDER BY maks_trayek DESC, km_overlap DESC LIMIT 10");
         return response()->json(['kelas' => $kelas, 'jalan_terpadat' => $top]);
     }
@@ -265,6 +263,11 @@ class TrayekController extends Controller
                 }
             }
             $o->tarif = $o->tarif !== null ? (int) $o->tarif : null;
+            foreach (['jalan_ke_naik_m', 'jalan_dari_turun_m', 'jarak_angkot_m', 'jarak_angkot_1_m', 'jarak_angkot_2_m'] as $f) {
+                if (isset($o->$f)) {
+                    $o->$f = (int) $o->$f;
+                }
+            }
         }
 
         return response()->json([
