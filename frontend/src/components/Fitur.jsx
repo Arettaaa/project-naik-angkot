@@ -1,6 +1,5 @@
 import { lazy, Suspense, useRef, useState } from 'react'
 import 'leaflet/dist/leaflet.css'
-import latarFitur from '../assets/fitur/latar-fitur.svg'
 import demoRute from '../data/demoRute'
 
 const PetaFitur = lazy(() => import('./fitur/PetaFitur'))
@@ -61,18 +60,10 @@ export default function Fitur({ data = demoRute }) {
   return (
     <section
       id="fitur"
-      className="relative -mt-px min-h-[760px] w-full overflow-hidden bg-[#F2F9FE] pb-10 scroll-mt-[123px] lg:-mt-[0.0694cqw] lg:h-[72.2222cqw] lg:min-h-0 lg:pb-0 lg:scroll-mt-[8.5417cqw]"
+      className="relative z-20 -mt-16 md:-mt-28 lg:-mt-px min-h-[760px] w-full overflow-hidden bg-transparent pb-10 scroll-mt-[123px] lg:h-[72.2222cqw] lg:min-h-0 lg:pb-0 lg:scroll-mt-[8.5417cqw]"
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <img
-          src={latarFitur}
-          alt=""
-          className="absolute -left-[0.4167cqw] -top-[37.9861cqw] w-[100cqw] max-w-none select-none max-lg:h-[150%] max-lg:w-full max-lg:object-cover"
-        />
-      </div>
-
       <div className="relative mx-auto w-full max-w-[1920px] [container-type:inline-size]">
-        <header className="relative px-5 pt-10 text-right lg:absolute lg:right-[8.3333cqw] lg:top-[0.8333cqw] lg:w-[51.3889cqw] lg:px-0 lg:pt-0">
+        <header className="relative px-5 pt-16 sm:pt-24 md:pt-28 text-right lg:absolute lg:right-[8.3333cqw] lg:top-[0.8333cqw] lg:w-[51.3889cqw] lg:px-0 lg:pt-0">
           <h2 className="font-display text-[clamp(2.25rem,5vw,3.75rem)] font-bold leading-[0.92] text-[#0D404F] lg:text-[4.1667cqw] lg:leading-[3.8417cqw]">
             Fitur Utama
           </h2>

@@ -22,7 +22,7 @@ const deskripsiPerBaris = {
 function CardIcon({ id }) {
   if (id === 'rute-presisi') {
     return (
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#FFF0F1] lg:h-[3.3333cqw] lg:w-[3.3333cqw] lg:rounded-[1.1111cqw]">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#FFF0F1] md:h-9 md:w-9 lg:h-[3.3333cqw] lg:w-[3.3333cqw] lg:rounded-[1.1111cqw]">
         <svg
           width="24"
           height="24"
@@ -30,7 +30,7 @@ function CardIcon({ id }) {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
-          className="lg:h-[1.6667cqw] lg:w-[1.6667cqw]"
+          className="h-4 w-4 md:h-[18px] md:w-[18px] lg:h-[1.6667cqw] lg:w-[1.6667cqw]"
         >
           <circle
             cx="91.75"
@@ -64,7 +64,7 @@ function CardIcon({ id }) {
 
   if (id === 'panduan-transit') {
     return (
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#EAF6FE] lg:h-[3.3333cqw] lg:w-[3.3333cqw] lg:rounded-[1.1111cqw]">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#EAF6FE] md:h-9 md:w-9 lg:h-[3.3333cqw] lg:w-[3.3333cqw] lg:rounded-[1.1111cqw]">
         <svg
           width="24"
           height="24"
@@ -72,7 +72,7 @@ function CardIcon({ id }) {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           aria-hidden="true"
-          className="lg:h-[1.6667cqw] lg:w-[1.6667cqw]"
+          className="h-4 w-4 md:h-[18px] md:w-[18px] lg:h-[1.6667cqw] lg:w-[1.6667cqw]"
         >
           <path
             d="M87.54 91.75C88.41 89.28 93.67 84.26 98.18 84.26C102.69 84.26 107.95 89.28 108.82 91.75C107.95 94.24 102.69 99.25 98.18 99.25C93.67 99.25 88.41 94.24 87.54 91.75Z"
@@ -96,7 +96,7 @@ function CardIcon({ id }) {
   }
 
   return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#FFF6E6] lg:h-[3.3333cqw] lg:w-[3.3333cqw] lg:rounded-[1.1111cqw]">
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#FFF6E6] md:h-9 md:w-9 lg:h-[3.3333cqw] lg:w-[3.3333cqw] lg:rounded-[1.1111cqw]">
       <svg
         width="24"
         height="24"
@@ -104,7 +104,7 @@ function CardIcon({ id }) {
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden="true"
-        className="lg:h-[1.6667cqw] lg:w-[1.6667cqw]"
+        className="h-4 w-4 md:h-[18px] md:w-[18px] lg:h-[1.6667cqw] lg:w-[1.6667cqw]"
       >
         <circle
           cx="110.11"
@@ -160,7 +160,7 @@ export default function KartuTumpuk({ kartu = kartuTentangData }) {
   }
 
   return (
-    <div className="relative aspect-[533.33/288] w-[90vw] max-w-[420px] lg:absolute lg:left-0 lg:top-0 lg:aspect-auto lg:h-[20cqw] lg:w-[37.037cqw] lg:max-w-none">
+    <div className="relative aspect-[539.53/320] w-[min(80vw,270px)] sm:w-[280px] md:w-[280px] lg:absolute lg:left-0 lg:top-0 lg:aspect-auto lg:h-[20cqw] lg:w-[37.037cqw] lg:max-w-none">
       {kartu.map((item, index) => {
         const relativeIndex = (index - activeFrontIndex + kartu.length) % kartu.length
         const isFront = relativeIndex === 0
@@ -181,25 +181,25 @@ export default function KartuTumpuk({ kartu = kartuTentangData }) {
             tabIndex={isFront ? 0 : -1}
             style={{ backgroundColor: item.warna }}
             ref={isFront ? activeButtonRef : undefined}
-            className={`absolute flex h-full w-full flex-col overflow-hidden rounded-[24px] p-3 text-left shadow-[0_6px_14px_rgba(0,0,0,0.25)] transition-transform duration-500 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 select-none lg:rounded-[2.7715cqw] lg:p-[4.4444cqw] lg:shadow-[0.4403cqw_0.6299cqw_1.2409cqw_rgba(0,0,0,0.25)] lg:focus-visible:ring-[0.2778cqw] ${reducedMotion ? 'motion-reduce:transition-none' : ''} ${slotClass} ${isFront ? 'z-30 cursor-pointer' : 'pointer-events-none z-10'}`}
+            className={`absolute flex h-full w-full flex-col items-start justify-center overflow-hidden rounded-[20px] p-4 text-left shadow-[0_6px_14px_rgba(0,0,0,0.25)] transition-transform duration-500 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 select-none sm:rounded-[24px] sm:p-5 lg:justify-start lg:rounded-[2.7715cqw] lg:p-[4.4444cqw] lg:shadow-[0.4403cqw_0.6299cqw_1.2409cqw_rgba(0,0,0,0.25)] lg:focus-visible:ring-[0.2778cqw] ${reducedMotion ? 'motion-reduce:transition-none' : ''} ${slotClass} ${isFront ? 'z-30 cursor-pointer' : 'pointer-events-none z-10'}`}
           >
             <div
-              className={`flex items-center gap-2 lg:gap-[1.1111cqw] ${isFront ? 'visible' : 'invisible'}`}
+              className={`flex items-center gap-2 md:gap-2.5 lg:gap-[1.1111cqw] ${isFront ? 'visible' : 'invisible'}`}
             >
               <div className="lg:scale-100">
                 <CardIcon id={item.id} />
               </div>
-              <h3 className="whitespace-nowrap font-display text-[clamp(1rem,5.2vw,1.5rem)] font-bold leading-tight text-white lg:text-[2.5cqw] lg:leading-[3.491cqw]">
+              <h3 className="whitespace-nowrap font-display text-[clamp(0.875rem,4vw,1.25rem)] font-bold leading-tight text-white md:text-[1.18rem] lg:text-[2.5cqw] lg:leading-[3.491cqw]">
                 {item.judul}
               </h3>
             </div>
 
             <p
-              className={`mt-2 font-sans text-[clamp(0.75rem,3.2vw,1rem)] font-bold leading-[1.25] text-white lg:mt-[0.5556cqw] lg:text-[1.9444cqw] lg:leading-[2.7778cqw] lg:tracking-[-0.03em] lg:[font-variation-settings:"wdth"_97] ${isFront ? 'visible' : 'invisible'}`}
+              className={`mt-1.5 font-sans text-[clamp(0.72rem,3vw,0.85rem)] font-bold leading-[1.25] text-white md:mt-2 md:text-[0.82rem] md:leading-snug lg:mt-[0.5556cqw] lg:text-[1.9444cqw] lg:leading-[2.7778cqw] lg:tracking-[-0.03em] lg:[font-variation-settings:"wdth"_97] ${isFront ? 'visible' : 'invisible'}`}
             >
               {deskripsiPerBaris[item.id].map((line) => (
-                <span key={line} className="block whitespace-normal lg:whitespace-nowrap">
-                  {line}
+                <span key={line} className="inline lg:block lg:whitespace-nowrap">
+                  {line}{' '}
                 </span>
               ))}
             </p>
