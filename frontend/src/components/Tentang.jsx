@@ -1,4 +1,5 @@
-import latarTentang from '../assets/tentang/latar-tentang.svg'
+import latarTentangHijauMuda from '../assets/tentang/latar-tentang-hijaumuda.svg'
+import latarTentangHijauTua from '../assets/tentang/latar-tentang-hijautua.svg'
 import sungai from '../assets/tentang/sungai.svg'
 import latarFitur from '../assets/fitur/latar-fitur.svg'
 import petaBogor from '../assets/tentang/peta-bogor.svg'
@@ -15,23 +16,27 @@ export default function Tentang() {
         {/* ===== LATAR GELOMBANG, SUNGAI, DAN FITUR ===== */}
         <div className="pointer-events-none absolute inset-x-0 top-0 bottom-0 z-0 overflow-x-clip overflow-y-visible" aria-hidden="true">
           <img
-            src={latarTentang}
+            src={latarTentangHijauMuda}
             alt=""
             className="absolute -left-[0.3472cqw] top-0 z-0 w-[100.6944cqw] max-w-none select-none"
           />
+          <img
+            src={latarTentangHijauTua}
+            alt=""
+            className="absolute -left-[0.3472cqw] top-[9.72cqw] z-10 w-[100.6944cqw] max-w-none select-none"
+          />
           <div
-            className="absolute inset-x-0 h-[214.5cqw] z-10 max-lg:top-[calc(100%+76.588cqw-4rem)] md:max-lg:top-[calc(100%+76.588cqw-7rem)] lg:top-[125.245cqw] bg-[linear-gradient(90deg,#2EAACE_0%,#2EAACE_12%,#57D4DE_100%)]"
+            className="absolute inset-x-0 top-[159.6474cqw] bottom-[calc(11.625rem_-_24.1144cqw)] z-10 bg-[#BAE59E] md:max-lg:bottom-[calc(14.625rem_-_24.1144cqw)] lg:hidden"
           />
           <img
             src={latarFitur}
             alt=""
-            className="absolute -left-[0.4167cqw] max-lg:left-0 max-lg:w-full top-[calc(100%+76.588cqw-4rem)] md:max-lg:top-[calc(100%+76.588cqw-7rem)] lg:top-[125.245cqw] z-20 w-[100.6944cqw] max-w-none select-none"
+            className="absolute -left-[0.4167cqw] max-lg:left-0 max-lg:w-full top-[calc(100%-6rem-8.5cqw+28.94cqw-6.125rem)] md:max-lg:top-[calc(100%-9rem-8.5cqw+28.94cqw-6.125rem)] lg:top-[52.3cqw] z-40 w-[100.6944cqw] max-w-none select-none"
           />
-          {/* Sungai di Tentang: berada di belakang kartu & peta, tepat di batas bawah Tentang */}
           <img
             src={sungai}
             alt=""
-            className="absolute -left-[0.4167cqw] w-[100.6944cqw] max-w-none select-none max-lg:left-0 max-lg:w-full max-lg:top-[calc(100%-4rem)] md:max-lg:top-[calc(100%-7rem)] lg:top-[48.125cqw] z-30"
+            className="absolute -left-[0.4167cqw] w-[100.6944cqw] max-w-none select-none max-lg:left-0 max-lg:w-full top-[calc(100%-6rem-8.5cqw-6.125rem)] md:max-lg:top-[calc(100%-9rem-8.5cqw-6.125rem)] lg:top-[45.2cqw] z-30"
           />
         </div>
 

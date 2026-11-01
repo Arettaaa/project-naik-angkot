@@ -205,27 +205,27 @@ function MapControls({
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[410] flex flex-col justify-between p-3 lg:p-[1cqw] max-lg:relative max-lg:inset-auto max-lg:gap-3 max-lg:p-0 max-lg:pt-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="pointer-events-auto max-lg:w-full">
+      <div className="flex items-start justify-between gap-3 max-lg:flex-col">
+        <div className="pointer-events-auto max-lg:w-full lg:ml-[5.2cqw]">
           {activeTab === 'kepadatan' && (
             <section
               aria-label="Tampilkan tingkat kepadatan"
-              className="rounded-xl bg-white/95 p-3 text-[#0D404F] shadow-lg lg:rounded-[0.9cqw] lg:p-[0.85cqw]"
+              className="max-lg:w-full rounded-xl bg-white/95 p-3 text-[#0D404F] shadow-lg lg:min-w-[19cqw] lg:rounded-[0.9cqw] lg:p-[1cqw]"
             >
-              <h3 className="mb-2 font-display text-xs font-bold lg:mb-[0.45cqw] lg:text-[0.9cqw]">
+              <h3 className="mb-2 font-display text-xs font-bold lg:mb-[0.55cqw] lg:text-[max(14px,1.1cqw)]">
                 Tingkat kepadatan
               </h3>
-              <div className="flex flex-wrap gap-2 lg:gap-[0.4cqw]">
+              <div className="flex flex-wrap gap-2 lg:gap-[0.55cqw]">
                 {data.ruasPadat.map((road) => (
                   <button
                     key={road.id}
                     type="button"
                     aria-pressed={Boolean(visibleDensity[road.id])}
                     onClick={() => toggleDensity(road.id)}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-[#D7E8E9] px-2.5 py-1 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:gap-[0.35cqw] lg:px-[0.55cqw] lg:py-[0.25cqw] lg:text-[0.75cqw]"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-[#D7E8E9] px-2.5 py-1 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:gap-[0.45cqw] lg:px-[0.7cqw] lg:py-[0.4cqw] lg:text-[max(12px,0.9cqw)]"
                   >
                     <span
-                      className="h-2 w-2 rounded-full lg:h-[0.55cqw] lg:w-[0.55cqw]"
+                      className="h-2 w-2 rounded-full lg:h-[0.7cqw] lg:w-[0.7cqw]"
                       style={{ backgroundColor: road.warna, opacity: visibleDensity[road.id] ? 1 : 0.3 }}
                     />
                     {road.tingkat}
@@ -237,32 +237,32 @@ function MapControls({
 
           {activeTab === 'eksplorasi' && (
             <section
-              aria-label="Pilih trayek untuk dijelajahi"
-              className="rounded-xl bg-white/95 p-3 text-[#0D404F] shadow-lg lg:w-[16cqw] lg:rounded-[0.9cqw] lg:p-[0.8cqw]"
+              aria-label="Pilih rute untuk dijelajahi"
+              className="max-lg:w-full rounded-xl bg-white/95 p-3 text-[#0D404F] shadow-lg lg:w-[34cqw] lg:min-w-[260px] lg:rounded-[0.9cqw] lg:p-[0.9cqw]"
             >
-              <h3 className="mb-2 font-display text-xs font-bold lg:mb-[0.45cqw] lg:text-[0.9cqw]">
-                Pilih trayek
+              <h3 className="mb-2 font-display text-xs font-bold lg:mb-[0.55cqw] lg:text-[max(14px,1.1cqw)]">
+                Pilih rute
               </h3>
-              <div className="grid gap-1.5 lg:gap-[0.4cqw]">
+              <div className="grid gap-1.5 max-lg:grid-cols-2 lg:gap-[0.4cqw]">
                 {data.trayek.map((route) => (
                   <button
                     key={route.id}
                     type="button"
                     aria-pressed={selectedRoute === route.id}
                     onClick={() => setSelectedRoute(route.id)}
-                    className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs font-semibold leading-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:gap-[0.45cqw] lg:rounded-[0.55cqw] lg:px-[0.5cqw] lg:py-[0.45cqw] lg:text-[0.72cqw] ${
+                    className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs font-semibold leading-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:gap-[0.4cqw] lg:rounded-[0.55cqw] lg:px-[0.45cqw] lg:py-[0.6cqw] lg:text-[max(12px,0.75cqw)] ${
                       selectedRoute === route.id
                         ? 'border-[#0D8790] bg-[#E8F6F8]'
                         : 'border-[#E0ECEC] hover:bg-[#F3FAFB]'
                     }`}
                   >
                     <span
-                      className="h-3 w-3 shrink-0 rounded-[3px] lg:h-[0.8cqw] lg:w-[0.8cqw]"
+                      className="h-3 w-3 shrink-0 rounded-[3px] lg:h-[0.9cqw] lg:w-[0.9cqw]"
                       style={{ backgroundColor: route.warna }}
                     />
-                    <span>
+                    <span className="min-w-0">
                       <span className="block font-bold">{route.id}</span>
-                      <span className="block font-normal">{route.nama}</span>
+                      <span className="block font-normal lg:whitespace-nowrap">{route.nama}</span>
                     </span>
                   </button>
                 ))}
@@ -272,20 +272,20 @@ function MapControls({
 
           {activeTab === 'filter' && (
             <section
-              aria-label="Tampilkan trayek"
-              className="rounded-xl bg-white/95 p-3 text-[#0D404F] shadow-lg lg:rounded-[0.9cqw] lg:p-[0.85cqw]"
+              aria-label="Tampilkan rute"
+              className="max-lg:w-full rounded-xl bg-white/95 p-3 text-[#0D404F] shadow-lg lg:min-w-[19cqw] lg:rounded-[0.9cqw] lg:p-[1cqw]"
             >
-              <h3 className="mb-2 font-display text-xs font-bold lg:mb-[0.45cqw] lg:text-[0.9cqw]">
-                Trayek di peta
+              <h3 className="mb-2 font-display text-xs font-bold lg:mb-[0.55cqw] lg:text-[max(14px,1.1cqw)]">
+                Rute di peta
               </h3>
-              <div className="flex flex-wrap gap-2 lg:gap-[0.4cqw]">
+              <div               className="flex flex-wrap gap-2 lg:gap-[0.55cqw]">
                 {data.trayek.map((route) => (
                   <button
                     key={route.id}
                     type="button"
                     aria-pressed={Boolean(visibleRoutes[route.id])}
                     onClick={() => toggleRoute(route.id)}
-                    className="rounded-full border border-[#D7E8E9] px-2.5 py-1 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:px-[0.55cqw] lg:py-[0.25cqw] lg:text-[0.75cqw]"
+                    className="rounded-full border border-[#D7E8E9] px-2.5 py-1 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:px-[0.7cqw] lg:py-[0.4cqw] lg:text-[max(12px,0.9cqw)]"
                     style={{ opacity: visibleRoutes[route.id] ? 1 : 0.45 }}
                   >
                     {route.id}
@@ -300,9 +300,9 @@ function MapControls({
                     onClose={() => setSelectedStop(null)}
                   >
                     <p>
-                      Trayek: {selectedStopRoutes.length
+                      Rute: {selectedStopRoutes.length
                         ? selectedStopRoutes.map((route) => route.id).join(', ')
-                        : 'Belum ada trayek'}
+                        : 'Belum ada rute'}
                     </p>
                     <p className="mt-1">Perkiraan waktu tunggu: 5–12 menit.</p>
                   </InfoCard>
@@ -314,12 +314,12 @@ function MapControls({
           {activeTab === 'tarif' && (
             <section
               aria-label="Cari rekomendasi rute dan tarif"
-              className="rounded-xl bg-white/95 p-3 text-[#0D404F] shadow-lg lg:w-[16cqw] lg:rounded-[0.9cqw] lg:p-[0.8cqw]"
+              className="max-lg:w-full rounded-xl bg-white/95 p-3 text-[#0D404F] shadow-lg lg:w-[34cqw] lg:min-w-[280px] lg:rounded-[0.9cqw] lg:p-[0.9cqw]"
             >
-              <h3 className="mb-2 font-display text-xs font-bold lg:mb-[0.45cqw] lg:text-[0.9cqw]">
+              <h3 className="mb-2 font-display text-xs font-bold lg:mb-[0.55cqw] lg:text-[max(14px,1.1cqw)]">
                 Cari perjalanan
               </h3>
-              <label className="mb-2 block text-xs font-semibold lg:mb-[0.45cqw] lg:text-[0.72cqw]">
+              <label className="mb-2 block text-xs font-semibold lg:mb-[0.45cqw] lg:text-[max(12px,0.8cqw)]">
                 Dari
                 <select
                   value={sourceId}
@@ -327,14 +327,14 @@ function MapControls({
                     onClearResult()
                     setSourceId(event.target.value)
                   }}
-                  className="mt-1 block w-full rounded-md border border-[#C9DDDF] bg-white px-2 py-1.5 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:mt-[0.2cqw] lg:rounded-[0.35cqw] lg:px-[0.4cqw] lg:py-[0.3cqw] lg:text-[0.7cqw]"
+                  className="mt-1 block w-full rounded-md border border-[#C9DDDF] bg-white px-2 py-1.5 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:mt-[0.25cqw] lg:rounded-[0.35cqw] lg:px-[0.55cqw] lg:py-[0.45cqw] lg:text-[max(12px,0.85cqw)]"
                 >
                   {data.halte.map((stop) => (
                     <option key={stop.id} value={stop.id}>{stop.nama}</option>
                   ))}
                 </select>
               </label>
-              <label className="mb-2 block text-xs font-semibold lg:mb-[0.45cqw] lg:text-[0.72cqw]">
+              <label className="mb-2 block text-xs font-semibold lg:mb-[0.45cqw] lg:text-[max(12px,0.8cqw)]">
                 Ke
                 <select
                   value={targetId}
@@ -342,7 +342,7 @@ function MapControls({
                     onClearResult()
                     setTargetId(event.target.value)
                   }}
-                  className="mt-1 block w-full rounded-md border border-[#C9DDDF] bg-white px-2 py-1.5 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:mt-[0.2cqw] lg:rounded-[0.35cqw] lg:px-[0.4cqw] lg:py-[0.3cqw] lg:text-[0.7cqw]"
+                  className="mt-1 block w-full rounded-md border border-[#C9DDDF] bg-white px-2 py-1.5 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#087B87] lg:mt-[0.25cqw] lg:rounded-[0.35cqw] lg:px-[0.55cqw] lg:py-[0.45cqw] lg:text-[max(12px,0.85cqw)]"
                 >
                   {data.halte.map((stop) => (
                     <option key={stop.id} value={stop.id}>{stop.nama}</option>
@@ -352,7 +352,7 @@ function MapControls({
               <button
                 type="button"
                 onClick={onFindRoute}
-                className="w-full rounded-full bg-[#087B65] px-3 py-2 text-xs font-bold text-white hover:bg-[#05634F] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0D404F] lg:py-[0.4cqw] lg:text-[0.75cqw]"
+                className="w-full rounded-full bg-[#087B65] px-3 py-2 text-xs font-bold text-white hover:bg-[#05634F] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0D404F] lg:py-[0.5cqw] lg:text-[max(12px,0.9cqw)]"
               >
                 Cari Rute
               </button>
@@ -362,7 +362,7 @@ function MapControls({
                 </p>
               )}
               {fareResult && (fareResult.status === 'none' || isFareReady) && (
-                <div aria-live="polite" className="mt-2 border-t border-[#D7E8E9] pt-2 text-xs lg:mt-[0.5cqw] lg:pt-[0.45cqw] lg:text-[0.7cqw]">
+                <div aria-live="polite" className="mt-2 border-t border-[#D7E8E9] pt-2 text-xs lg:mt-[0.5cqw] lg:pt-[0.45cqw] lg:text-[max(13px,0.9cqw)]">
                   {fareResult.status === 'none' ? (
                     <p className="font-semibold">Belum ada rute yang sesuai.</p>
                   ) : (
@@ -380,7 +380,7 @@ function MapControls({
                       </p>
                     </>
                   )}
-                  <p className="mt-1 text-[10px] leading-tight opacity-75 lg:text-[0.58cqw]">
+                  <p className="mt-1 text-[10px] leading-tight opacity-75 lg:text-[max(13px,0.9cqw)]">
                     Data contoh untuk demo, bukan data resmi.
                   </p>
                 </div>
@@ -389,8 +389,8 @@ function MapControls({
           )}
         </div>
 
-        <div className="pointer-events-auto max-lg:w-full">
-          {selectedRoadData && activeTab === 'kepadatan' && (
+        {selectedRoadData && activeTab === 'kepadatan' && (
+          <div className="pointer-events-auto max-lg:w-full">
             <InfoCard
               label="Informasi ruas jalan terpilih"
               title={selectedRoadData.nama}
@@ -399,27 +399,27 @@ function MapControls({
               <p>
                 Kepadatan: <strong>{selectedRoadData.tingkat}</strong>
               </p>
-              <p className="mt-1">Perkiraan {selectedRoadData.jumlahTrayek} trayek melintas.</p>
+              <p className="mt-1">Perkiraan {selectedRoadData.jumlahTrayek} rute melintas.</p>
             </InfoCard>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      <div className="pointer-events-auto flex justify-end max-lg:flex-col max-lg:gap-2">
+      <div className="pointer-events-auto flex justify-end max-lg:w-full max-lg:flex-col max-lg:gap-2">
         <section
           aria-label={`Legenda ${activeTab === 'kepadatan' ? 'kepadatan jalan' : 'jalur angkot'}`}
-          className="ml-auto rounded-lg bg-white/95 px-3 py-2 text-[#0D404F] shadow-md lg:rounded-[0.65cqw] lg:px-[0.75cqw] lg:py-[0.55cqw]"
+          className="ml-auto w-full rounded-lg bg-white/95 px-3 py-2 text-[#0D404F] shadow-md lg:mb-[2.5cqw] lg:min-w-[19cqw] lg:w-auto lg:rounded-[0.75cqw] lg:px-[1cqw] lg:py-[0.8cqw]"
         >
-          <h3 className="font-display text-[10px] font-bold uppercase tracking-wide lg:text-[0.62cqw]">
+          <h3 className="font-display text-[10px] font-bold uppercase tracking-wide lg:text-[max(12px,1cqw)]">
             {activeTab === 'kepadatan' ? 'KEPADATAN JALAN' : 'RUTE ANGKOT'}
           </h3>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] lg:mt-[0.25cqw] lg:gap-x-[0.7cqw] lg:gap-y-[0.2cqw] lg:text-[0.6cqw]">
+          <div className="mt-1 flex flex-wrap justify-between gap-x-3 gap-y-1 text-[10px] lg:mt-[0.4cqw] lg:justify-start lg:gap-x-[0.8cqw] lg:gap-y-[0.3cqw] lg:text-[max(11px,0.9cqw)]">
             {(activeTab === 'kepadatan'
               ? data.ruasPadat.map((road) => ({ id: road.id, nama: road.tingkat, warna: road.warna }))
               : data.trayek.map((route) => ({ id: route.id, nama: route.id, warna: route.warna }))
             ).map((item) => (
-              <span key={item.id} className="inline-flex items-center gap-1">
-                <span className="h-1.5 w-4 rounded-full lg:h-[0.3cqw] lg:w-[1cqw]" style={{ background: item.warna }} />
+              <span key={item.id} className="inline-flex items-center gap-1 lg:gap-[0.4cqw]">
+                <span className="h-1.5 w-4 rounded-full lg:h-[0.45cqw] lg:w-[1.2cqw]" style={{ background: item.warna }} />
                 {item.nama}
               </span>
             ))}
@@ -522,7 +522,7 @@ export default function PetaFitur({
           scrollWheelZoom={false}
           zoomControl={false}
           className="!absolute !inset-0 !z-0 !h-full !w-full"
-          aria-label="Peta interaktif trayek dan halte angkot Kota Bogor"
+          aria-label="Peta interaktif rute dan halte angkot Kota Bogor"
         >
           {/* The unauthenticated CARTO endpoint returns an API-key placeholder; keep the live OSM map as the fallback. */}
           <TileLayer
@@ -627,7 +627,7 @@ export default function PetaFitur({
         <div className="pointer-events-none absolute inset-0 z-[399] bg-[#CDEFF3]/20" aria-hidden="true" />
         {activeTab === 'filter' && allVisibleRoutesOff && (
           <p className="pointer-events-none absolute left-1/2 top-1/2 z-[401] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white/95 px-4 py-2 text-center text-sm font-semibold text-[#0D404F] shadow lg:text-[0.9cqw]">
-            Tidak ada trayek yang ditampilkan
+            Tidak ada rute yang ditampilkan
           </p>
         )}
       </div>

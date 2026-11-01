@@ -7,7 +7,7 @@ export const kartuTentang = [
     id: 'rute-presisi',
     judul: 'Rute Presisi',
     deskripsi:
-      'Temukan titik naik-turun dan jalur trayek paling efisien tanpa takut salah angkot.',
+      'Temukan titik naik-turun dan rute paling efisien tanpa takut salah angkot.',
     warna: '#FF7D1F',
     ikon: ikonPresisi,
   },

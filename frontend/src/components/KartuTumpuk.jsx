@@ -4,8 +4,8 @@ import kartuTentangData from '../data/kartuTentang'
 const deskripsiPerBaris = {
   'rute-presisi': [
     'Temukan titik naik-turun dan',
-    'jalur trayek paling efisien tanpa',
-    'takut salah angkot.',
+    'rute paling efisien tanpa takut',
+    'salah angkot.',
   ],
   'panduan-transit': [
     'Informasi rute jauh lebih mudah',

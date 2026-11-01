@@ -31,15 +31,14 @@ export default function Fitur({ data = demoRute }) {
 
   const handleTabKeyDown = (event, index) => {
     const mobile = window.matchMedia('(max-width: 1023px)').matches
-    const previousKey = mobile ? 'ArrowLeft' : 'ArrowUp'
-    const nextKey = mobile ? 'ArrowRight' : 'ArrowDown'
+    const offsets = mobile
+      ? { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -2, ArrowDown: 2 }
+      : { ArrowUp: -1, ArrowDown: 1 }
+    const offset = offsets[event.key]
 
-    if (event.key === previousKey) {
+    if (offset !== undefined) {
       event.preventDefault()
-      focusTab(index - 1)
-    } else if (event.key === nextKey) {
-      event.preventDefault()
-      focusTab(index + 1)
+      focusTab(index + offset)
     } else if (event.key === 'Home') {
       event.preventDefault()
       focusTab(0)
@@ -63,12 +62,12 @@ export default function Fitur({ data = demoRute }) {
       className="relative z-20 -mt-16 md:-mt-28 lg:-mt-px min-h-[760px] w-full overflow-hidden bg-transparent pb-10 scroll-mt-[123px] lg:h-[72.2222cqw] lg:min-h-0 lg:pb-0 lg:scroll-mt-[8.5417cqw]"
     >
       <div className="relative mx-auto w-full max-w-[1920px] [container-type:inline-size]">
-        <header className="relative px-5 pt-16 sm:pt-24 md:pt-28 text-right lg:absolute lg:right-[8.3333cqw] lg:top-[0.8333cqw] lg:w-[51.3889cqw] lg:px-0 lg:pt-0">
+        <header className="relative -translate-y-2 px-5 pt-[max(9.5rem,calc(32.5cqw+1rem))] text-right lg:absolute lg:right-[8.3333cqw] lg:top-[3cqw] lg:w-[51.3889cqw] lg:translate-y-0 lg:px-0 lg:pt-0">
           <h2 className="font-display text-[clamp(2.25rem,5vw,3.75rem)] font-bold leading-[0.92] text-[#0D404F] lg:text-[4.1667cqw] lg:leading-[3.8417cqw]">
             Fitur Utama
           </h2>
           <p className="mt-2 font-sans text-base font-medium leading-snug text-[#0D404F] sm:text-lg lg:mt-[0.7639cqw] lg:text-[2.5cqw] lg:leading-[3.8417cqw]">
-            Cek kepadatan jalan dan pilih trayek.
+            Cek kepadatan jalan dan pilih rute.
             <br />
             Saring halte untuk cari rute dan tarif.
           </p>
@@ -78,7 +77,7 @@ export default function Fitur({ data = demoRute }) {
           <div
             role="tablist"
             aria-label="Fitur peta NAIK"
-            className="fitur-tablist mb-3 flex gap-2 overflow-x-auto pb-1 lg:absolute lg:left-[3.125cqw] lg:top-[2.8472cqw] lg:mb-0 lg:grid lg:w-[20.4167cqw] lg:grid-rows-4 lg:gap-y-[2.2917cqw] lg:overflow-visible lg:pb-0"
+            className="fitur-tablist mb-3 grid grid-cols-2 gap-2 pb-1 lg:absolute lg:left-[3.125cqw] lg:top-[2.8472cqw] lg:mb-0 lg:w-[20.4167cqw] lg:grid-cols-1 lg:grid-rows-4 lg:gap-x-0 lg:gap-y-[2.2917cqw] lg:pb-0"
           >
             {TABS.map((tab, index) => (
               <button
@@ -94,7 +93,7 @@ export default function Fitur({ data = demoRute }) {
                 tabIndex={activeTab === tab.id ? 0 : -1}
                 onClick={() => setActiveTab(tab.id)}
                 onKeyDown={(event) => handleTabKeyDown(event, index)}
-                className={`min-h-10 shrink-0 rounded-full border-2 px-4 font-sans text-sm font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[5cqw] lg:w-full lg:border-[0.2083cqw] lg:px-[0.8cqw] lg:text-[1.5278cqw] ${
+                className={`flex min-h-11 w-full items-center justify-center rounded-full border-2 px-2 py-2 text-center font-sans text-[clamp(0.7rem,2.4vw,0.875rem)] font-semibold leading-tight transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[5cqw] lg:min-h-0 lg:border-[0.2083cqw] lg:px-[0.8cqw] lg:py-0 lg:text-[1.5278cqw] ${
                   activeTab === tab.id
                     ? 'border-[#BAE59E] bg-[#BAE59E] text-[#0D404F] shadow-[0_0.55cqw_1cqw_rgba(0,0,0,0.18)]'
                     : 'border-[#C6EDA4] bg-transparent text-[#C6EDA4] hover:bg-white/10'
