@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import Navbar from '../components/Navbar'
 import Hero from '../components/Hero'
 import Tentang from '../components/Tentang'
@@ -5,11 +6,14 @@ import Fitur from '../components/Fitur'
 import CaraKerja from '../components/CaraKerja'
 import CTASection from '../components/CTASection'
 import Footer from '../components/Footer'
+import useReveal from '../hooks/useReveal'
 
-// Landing page (dibuat tim) — isinya sama persis dengan App.jsx lama.
 export default function LandingPage() {
+  const ref = useRef(null)
+  useReveal(ref)
+
   return (
-    <main className="min-h-screen bg-[#E8F6FF] text-hero-brown">
+    <main ref={ref} className="min-h-screen bg-[#E8F6FF] text-hero-brown">
       <Navbar />
       <div className="mx-auto w-full max-w-[1920px] [container-type:inline-size]">
         <Hero />

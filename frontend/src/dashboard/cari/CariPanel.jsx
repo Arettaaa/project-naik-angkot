@@ -1,19 +1,49 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CircleMarker, GeoJSON, Polyline, Tooltip } from 'react-leaflet'
-import AppShell, { KodeBadge, PanelSection } from '../components/app/AppShell'
-import BaseMap, { FitToPoints, MapCard } from '../components/map/BaseMap'
-import { api } from '../api/naik'
-import useApi from '../hooks/useApi'
-import { TEMPAT } from '../data/tempat'
-import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../utils/format'
+import { CircleMarker, GeoJSON, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+import L from 'leaflet'
+import { api } from '../../api/naik'
+import { TEMPAT } from '../../data/tempat'
+import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
+import { useDashboard } from '../context'
+import { Card, CardHeader, Floating, KodeBadge as Badge, PrimaryButton } from '../ui'
+import { IconSearch } from '../icons'
+
+const KodeBadge = (p) => <Badge size="sm" {...p} />
+
+function PanelSection({ title, children }) {
+  return (
+    <section className="border-t border-[#EDF1F2] px-5 py-4 lg:px-6">
+      {title && <h3 className="mb-3 font-display text-[16px] font-bold text-tentang-dark">{title}</h3>}
+      {children}
+    </section>
+  )
+}
+
+function KlikPeta({ onClick }) {
+  useMapEvents({ click: (e) => onClick(e.latlng) })
+  return null
+}
+
+function FitToPoints({ points }) {
+  const map = useMap()
+  const key = JSON.stringify(points)
+  useEffect(() => {
+    const p = points.filter(Boolean)
+    if (!p.length) return
+    const kiri = window.innerWidth >= 1024 ? 460 : 30
+    if (p.length === 1) map.setView(p[0], Math.max(map.getZoom(), 15))
+    else map.fitBounds(L.latLngBounds(p), { paddingTopLeft: [kiri, 60], paddingBottomRight: [80, 120] })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, map])
+  return null
+}
 
 const WARNA_ASAL = '#38BDF8'
 const WARNA_TUJUAN = '#FFAB2E'
 
-// Halaman Cari Rute: pilih asal & tujuan -> rekomendasi angkot langsung / 1x transfer + tarif.
-export default function CariPage() {
-  const trayek = useApi(() => api.trayek(), [])
+export default function CariPanel() {
+  const { trayek } = useDashboard()
   const warna = useMemo(() => Object.fromEntries((trayek.data ?? []).map((t) => [t.kode_trayek, t.warna])), [trayek.data])
 
   const [asal, setAsal] = useState(null)
@@ -75,12 +105,8 @@ export default function CariPage() {
 
   const panel = (
     <>
-      <PanelSection>
-        <h1 className="font-display text-2xl font-bold text-tentang-dark">Cari Rute Angkot</h1>
-        <p className="mt-1 text-sm text-dark/70">Tentukan titik asal dan tujuan, lalu NAIK carikan angkot langsung atau dengan 1x pindah.</p>
-      </PanelSection>
-
-      <PanelSection>
+      <CardHeader title="Cari Rute" icon={<IconSearch className="h-5 w-5" />} subtitle="Tentukan asal & tujuan, NAIK carikan angkot langsung atau 1x pindah." />
+      <div className="px-5 pt-4 pb-5 lg:px-6">
         <TitikInput
           label="Dari"
           warna={WARNA_ASAL}
@@ -130,19 +156,15 @@ export default function CariPage() {
           </select>
         </label>
 
-        <button
-          onClick={cari}
-          disabled={!asal || !tujuan || hasil.loading}
-          className="mt-4 w-full rounded-full bg-primary px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
+        <PrimaryButton onClick={cari} disabled={!asal || !tujuan || hasil.loading} className="mt-4">
           {hasil.loading ? 'Mencari…' : 'Cari rute'}
-        </button>
+        </PrimaryButton>
         {(!asal || !tujuan) && (
           <p className="mt-2 text-center text-xs text-dark/50">
             Pilih dari daftar, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
           </p>
         )}
-      </PanelSection>
+      </div>
 
       {hasil.error && (
         <div className="m-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{hasil.error.message}</div>
@@ -158,22 +180,25 @@ export default function CariPage() {
     ? [asal, tujuan].map((t) => [t.lat, t.lng]).concat(garisOpsi(opsi).flat())
     : [asal, tujuan].filter(Boolean).map((t) => [t.lat, t.lng])
 
-  const map = (
-    <BaseMap onClick={klikPeta} className={mode ? 'cursor-crosshair' : ''}>
+  return (
+    <>
+      <Floating className="top-3 left-3 right-3 flex max-h-[calc(58%-12px)] flex-col lg:right-auto lg:bottom-3 lg:left-[94px] lg:max-h-none lg:w-[360px]">
+        <Card className="naik-scroll min-h-0 overflow-y-auto">{panel}</Card>
+      </Floating>
+      <Floating className="bottom-24 left-1/2 -translate-x-1/2 lg:bottom-4">
+        <p className="rounded-full bg-white px-4 py-2 text-[13px] font-semibold whitespace-nowrap shadow-[0_8px_30px_rgba(21,30,44,0.14)]">
+          Klik peta untuk mengisi{' '}
+          <span style={{ color: mode === 'asal' ? WARNA_ASAL : WARNA_TUJUAN }}>{mode === 'asal' ? 'ASAL' : 'TUJUAN'}</span>
+        </p>
+      </Floating>
+      <KlikPeta onClick={klikPeta} />
       {opsi && <RuteOpsi opsi={opsi} warna={warna} asal={asal} tujuan={tujuan} />}
       {asal && <Penanda titik={asal} warna={WARNA_ASAL} label="Asal" />}
       {tujuan && <Penanda titik={tujuan} warna={WARNA_TUJUAN} label="Tujuan" />}
       <FitToPoints points={titikFit} />
-      <MapCard position="top-left">
-        <p className="text-xs font-semibold">
-          Klik peta untuk mengisi{' '}
-          <span style={{ color: mode === 'asal' ? WARNA_ASAL : WARNA_TUJUAN }}>{mode === 'asal' ? 'ASAL' : 'TUJUAN'}</span>
-        </p>
-      </MapCard>
-    </BaseMap>
+    </>
   )
 
-  return <AppShell panel={panel} map={map} />
 }
 
 function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, extra }) {
