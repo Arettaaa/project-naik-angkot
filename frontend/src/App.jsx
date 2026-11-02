@@ -1,24 +1,19 @@
-import Navbar from './components/Navbar'
-import Hero from './components/Hero'
-import Tentang from './components/Tentang'
-import Fitur from './components/Fitur'
-import CaraKerja from './components/CaraKerja'
-import CTASection from './components/CTASection'
-import Footer from './components/Footer'
+import { Route, Routes } from 'react-router-dom'
+import LandingPage from './pages/LandingPage'
+import PetaPage from './pages/PetaPage'
+import RutePage from './pages/RutePage'
+import CariPage from './pages/CariPage'
 
 function App() {
   return (
-    <main className="min-h-screen bg-[#E8F6FF] text-hero-brown">
-      <Navbar />
-      <div className="mx-auto w-full max-w-[1920px] [container-type:inline-size]">
-        <Hero />
-        <Tentang />
-        <Fitur />
-        <CaraKerja />
-        <CTASection />
-      </div>
-      <Footer />
-    </main>
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/peta" element={<PetaPage />} />
+      <Route path="/rute" element={<RutePage />} />
+      <Route path="/rute/:kode" element={<RutePage />} />
+      <Route path="/cari" element={<CariPage />} />
+      <Route path="*" element={<LandingPage />} />
+    </Routes>
   )
 }
 
