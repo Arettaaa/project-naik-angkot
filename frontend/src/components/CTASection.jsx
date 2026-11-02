@@ -27,7 +27,7 @@ export default function CTASection() {
         </p>
 
         <a
-          href="#peta"
+          href="/peta"
           className="mt-8 inline-flex min-h-12 items-center justify-center gap-3 rounded-full bg-[#2F6B4F] px-7 py-3 font-sans text-base font-semibold text-white shadow-[0_4px_10px_rgba(20,83,45,0.2)] transition-colors hover:bg-[#24583F] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#2F6B4F] lg:mt-[2.5cqw] lg:min-h-[4.1667cqw] lg:gap-[0.8333cqw] lg:px-[2.2222cqw] lg:text-[1.1111cqw]"
         >
           Buka Peta Angkot

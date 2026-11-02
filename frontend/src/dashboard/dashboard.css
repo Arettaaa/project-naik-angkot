@@ -1,0 +1,42 @@
+/* Gaya khusus dashboard peta (popup kartu, atribusi, dll). */
+.naik-dashboard .leaflet-container {
+  font-family: var(--font-sans);
+  background: #e7ecea;
+}
+
+.naik-dashboard .leaflet-control-attribution {
+  border-radius: 10px 0 0 0;
+  font-size: 10px;
+}
+
+@media (max-width: 1023px) {
+  .naik-dashboard .leaflet-bottom.leaflet-right {
+    bottom: 84px;
+  }
+}
+
+/* Popup berbentuk kartu seperti desain */
+.naik-popup .leaflet-popup-content-wrapper {
+  border-radius: 22px;
+  padding: 0;
+  box-shadow: 0 12px 32px rgba(21, 30, 44, 0.18);
+}
+.naik-popup .leaflet-popup-content {
+  margin: 0;
+  width: auto !important;
+  min-width: 260px;
+  font-family: var(--font-sans);
+  line-height: 1.4;
+}
+.naik-popup .leaflet-popup-tip {
+  box-shadow: none;
+}
+
+.naik-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #d5dee0 transparent;
+}
+
+.naik-popup .leaflet-popup-content p {
+  margin: 0;
+}

@@ -1,0 +1,135 @@
+import { useEffect, useRef } from 'react'
+import L from 'leaflet'
+import { IconChevronDown, IconX } from './icons'
+
+// Panel melayang di atas peta. Klik/scroll di dalam panel tidak menggerakkan peta.
+export function Floating({ className = '', children, ...rest }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!ref.current) return
+    L.DomEvent.disableClickPropagation(ref.current)
+    L.DomEvent.disableScrollPropagation(ref.current)
+  }, [])
+  return (
+    <div ref={ref} className={`absolute z-[1000] cursor-auto ${className}`} {...rest}>
+      {children}
+    </div>
+  )
+}
+
+export function Card({ className = '', children }) {
+  return (
+    <div className={`rounded-[28px] border border-white/70 bg-white/95 shadow-[0_8px_30px_rgba(21,30,44,0.12)] backdrop-blur ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+export function CardHeader({ title, subtitle, icon, onClose }) {
+  return (
+    <div className="flex items-start gap-3 px-5 pt-5 lg:px-6 lg:pt-6">
+      <div className="min-w-0 flex-1">
+        <h2 className="flex items-center gap-2 font-display text-[22px] font-bold leading-tight text-tentang-dark">
+          {icon && <span className="text-primary">{icon}</span>}
+          {title}
+        </h2>
+        {subtitle && <p className="mt-1.5 text-[13px] text-dark/60">{subtitle}</p>}
+      </div>
+      {onClose && (
+        <button
+          onClick={onClose}
+          aria-label="Tutup"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/50 transition hover:bg-mist hover:text-dark"
+        >
+          <IconX className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+export function Select({ label, value, onChange, children }) {
+  return (
+    <label className="block">
+      {label && <span className="mb-2 block text-[13px] font-semibold text-tentang-dark">{label}</span>}
+      <span className="relative block">
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-12 w-full appearance-none rounded-2xl border border-[#E3E8EA] bg-white pr-10 pl-4 text-[15px] text-dark outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+        >
+          {children}
+        </select>
+        <IconChevronDown className="pointer-events-none absolute top-1/2 right-3.5 h-4 w-4 -translate-y-1/2 text-dark/50" />
+      </span>
+    </label>
+  )
+}
+
+export function Checkbox({ checked, onChange, children }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-3 py-1.5 text-[15px] text-dark">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+      <span
+        className={`flex h-5 w-5 items-center justify-center rounded-[6px] border-2 transition peer-focus-visible:ring-2 peer-focus-visible:ring-primary/30 ${
+          checked ? 'border-primary bg-primary text-white' : 'border-[#CFD8DB] bg-white'
+        }`}
+      >
+        {checked && (
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        )}
+      </span>
+      {children}
+    </label>
+  )
+}
+
+export function PrimaryButton({ className = '', children, ...p }) {
+  return (
+    <button
+      className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-white shadow-[0_6px_16px_rgba(26,147,111,0.25)] transition hover:bg-[#178563] disabled:opacity-40 ${className}`}
+      {...p}
+    >
+      {children}
+    </button>
+  )
+}
+
+export function OutlineButton({ className = '', children, ...p }) {
+  return (
+    <button
+      className={`inline-flex h-12 w-full items-center justify-center rounded-2xl border border-[#E3E8EA] bg-white text-[15px] font-medium text-dark/70 transition hover:bg-[#F6F9F9] ${className}`}
+      {...p}
+    >
+      {children}
+    </button>
+  )
+}
+
+// Kotak nomor trayek berwarna (01, 03, ...).
+export function KodeBadge({ kode, warna, size = 'md' }) {
+  const s = { sm: 'h-7 w-7 rounded-lg text-xs', md: 'h-11 w-11 rounded-xl text-[17px]', lg: 'h-12 w-12 rounded-2xl text-xl' }[size]
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center font-display font-bold text-white ${s}`} style={{ backgroundColor: warna }}>
+      {String(kode).replace(/^Trayek\s*/i, '')}
+    </span>
+  )
+}
+
+export function Muat({ loading, error, onRetry }) {
+  if (loading) return <p className="px-6 py-4 text-sm text-dark/60">Memuat data…</p>
+  if (!error) return null
+  return (
+    <div className="mx-5 my-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      <p className="font-semibold">Data gagal dimuat</p>
+      <p className="mt-1">{error.message}. Pastikan backend jalan (php artisan serve).</p>
+      {onRetry && (
+        <button onClick={onRetry} className="mt-2 font-semibold underline">
+          Coba lagi
+        </button>
+      )}
+    </div>
+  )
+}
