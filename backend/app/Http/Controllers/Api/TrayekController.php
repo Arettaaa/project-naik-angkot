@@ -7,6 +7,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * API data NAIK (Navigasi Angkot) — baca langsung dari schema PostGIS "naik".
+ * Semua koordinat EPSG:4326 (lon, lat). GeoJSON dibangun di PostgreSQL biar cepat.
+ */
 class TrayekController extends Controller
 {
     /** Ekspresi garis tunggal dari MultiLineString (dipakai ST_LineLocatePoint). */
