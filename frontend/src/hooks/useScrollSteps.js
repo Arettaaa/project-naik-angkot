@@ -4,6 +4,10 @@ function getReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
+function isMobileLayout() {
+  return window.matchMedia('(max-width: 639px)').matches
+}
+
 function reducer(state, action) {
   switch (action.type) {
     case 'reveal':
@@ -55,7 +59,8 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
         fallbackTimer = 0
       }
       if (visibleCountRef.current < targetCount) {
-        revealTimer = window.setTimeout(revealNext, 180)
+        const delay = isMobileLayout() ? 500 : 180
+        revealTimer = window.setTimeout(revealNext, delay)
       }
     }
 
@@ -102,7 +107,10 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
       sectionInRange = inRange
 
       if (inRange) {
-        fallbackTimer = window.setTimeout(() => revealThrough(stepCount - 1), 3000)
+        if (isMobileLayout()) refresh()
+        if (!isMobileLayout()) {
+          fallbackTimer = window.setTimeout(() => revealThrough(stepCount - 1), 3000)
+        }
         return
       }
 
@@ -141,12 +149,12 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
       animationFrame = window.requestAnimationFrame(() => {
         animationFrame = 0
         measureSectionBounds()
-        if (!window.matchMedia('(max-width: 1023px)').matches) measureDesktopThresholds()
+        if (!isMobileLayout()) measureDesktopThresholds()
         const scrollY = window.scrollY
         const inRange = sectionBounds.bottom >= scrollY - 100
           && sectionBounds.top <= scrollY + window.innerHeight + 100
         updateSectionRange(inRange)
-        if (!sectionInRange || window.matchMedia('(max-width: 1023px)').matches) return
+        if (!sectionInRange || isMobileLayout()) return
 
         let reached = -1
         thresholds.forEach((threshold, index) => {
@@ -159,15 +167,17 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
     const refresh = () => {
       measureSectionBounds()
 
-      if (window.matchMedia('(max-width: 1023px)').matches) {
+      if (isMobileLayout()) {
         stepObserver?.disconnect()
         stepObserver = new IntersectionObserver((entries) => {
+          let lastIntersectingIndex = -1
           entries.forEach((entry) => {
             if (!entry.isIntersecting) return
             const index = stepsRef.current.indexOf(entry.target)
-            if (index >= 0) revealThrough(index)
+            lastIntersectingIndex = Math.max(lastIntersectingIndex, index)
             stepObserver.unobserve(entry.target)
           })
+          if (lastIntersectingIndex >= 0) revealThrough(lastIntersectingIndex)
         }, { threshold: 0.2 })
         stepsRef.current.forEach((step) => {
           if (step) stepObserver.observe(step)
