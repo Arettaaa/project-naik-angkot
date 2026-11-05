@@ -1,5 +1,3 @@
-// Klien API NAIK (Laravel). Saat `npm run dev`, /api diteruskan ke http://localhost:8000 (lihat vite.config.js).
-// Untuk build/deploy, isi VITE_API_URL di .env, mis. VITE_API_URL=https://api-naik.example.com
 const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '') + '/api'
 
 async function get(path, params) {
