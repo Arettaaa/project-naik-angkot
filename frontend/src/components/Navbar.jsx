@@ -84,7 +84,7 @@ export default function Navbar() {
 
         {/* Tombol CTA */}
         <a
-          href="#"
+          href="/peta"
           className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2.5 text-[20px] font-semibold leading-5 text-white transition-opacity hover:opacity-90"
         >
           Eksplorasi
@@ -137,7 +137,7 @@ export default function Navbar() {
             </a>
           ))}
           <a
-            href="#"
+            href="/peta"
             className="mt-1 inline-flex items-center justify-center rounded-full bg-primary px-5 py-3 text-base font-semibold text-white transition-opacity hover:opacity-90"
             onClick={closeMenu}
           >

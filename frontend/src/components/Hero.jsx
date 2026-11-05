@@ -102,7 +102,7 @@ export default function Hero() {
         <div className="mt-3 inline-flex h-[clamp(48px,13.3vw,52px)] max-w-full w-[min(320px,100%)] min-w-0 items-center justify-between gap-[clamp(4px,1.5vw,8px)] rounded-full border-[1.28px] border-white/30 bg-hero-pill px-[clamp(10px,3.2vw,20px)] pr-[clamp(22px,6vw,30px)] shadow-sm backdrop-blur-[10px] max-[360px]:mt-1 max-[360px]:h-10 sm:mt-6 sm:h-[56px] sm:w-[min(360px,100%)] sm:min-w-[320px] lg:mt-5">
           {/* Ikon Pin + Label Cari Rute Sekarang */}
           <a
-            href="#rute"
+            href="/cari"
             className="inline-flex items-center gap-[clamp(6px,2vw,10px)] text-hero-brown transition-opacity hover:opacity-85"
           >
             {/* Ikon Pin Lokasi (SVG Inline 16px, garis tanpa isi, stroke 1.7px) */}

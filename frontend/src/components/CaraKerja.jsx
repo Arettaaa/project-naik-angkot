@@ -58,9 +58,9 @@ function getResponsiveRoute(section, steps) {
     const markerBounds = marker.getBoundingClientRect()
     return markerBounds.width && markerBounds.height
       ? {
-          x: markerBounds.left + markerBounds.width / 2 - sectionBounds.left,
-          y: markerBounds.top + markerBounds.height / 2 - sectionBounds.top,
-        }
+        x: markerBounds.left + markerBounds.width / 2 - sectionBounds.left,
+        y: markerBounds.top + markerBounds.height / 2 - sectionBounds.top,
+      }
       : null
   })
 
