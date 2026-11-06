@@ -1,11 +1,21 @@
 import { rupiah } from '../../utils/format'
 import { Card, CardHeader, Floating, KodeBadge, Muat, PrimaryButton } from '../ui'
-import { IconPin, IconSwap } from '../icons'
+import { IconBus, IconPin, IconSwap } from '../icons'
 import PetaMini from './PetaMini'
 import JalurRute from './JalurRute'
 
-// Panel Detail Rute (kanan): ringkasan, peta mini, arah, jalur, tombol Tampilkan di Peta.
-export default function DetailRute({ fitur, detail, bisaBalik, onBalik, onTampilkan, onClose }) {
+// Panel Detail Rute (kanan): ringkasan, peta mini, arah, jalur, tombol Mulai Simulasi & Tampilkan di Peta.
+export default function DetailRute({
+  fitur,
+  detail,
+  bisaBalik,
+  onBalik,
+  onTampilkan,
+  onMulaiSimulasi,
+  onPilihTitik,
+  simulasiAktif,
+  onClose,
+}) {
   const p = fitur.properties
   const arah = detail.data?.rute.find((r) => r.rute_id === p.rute_id)
   return (
@@ -36,7 +46,7 @@ export default function DetailRute({ fitur, detail, bisaBalik, onBalik, onTampil
 
           <p className="mt-5 text-[14px] font-semibold text-tentang-dark">Jalur Rute</p>
           <Muat loading={detail.loading} error={detail.error} />
-          {arah && <JalurRute halte={arah.halte} />}
+          {arah && <JalurRute halte={arah.halte} onPilih={onPilihTitik} />}
           {arah?.urutan_jalan?.length > 0 && (
             <details className="mt-4 rounded-2xl bg-[#F6F9F9] px-4 py-3 text-[13px]">
               <summary className="cursor-pointer font-semibold text-dark/80">Jalan yang dilewati ({arah.urutan_jalan.length})</summary>
@@ -44,7 +54,18 @@ export default function DetailRute({ fitur, detail, bisaBalik, onBalik, onTampil
             </details>
           )}
         </div>
-        <div className="sticky bottom-0 mt-auto bg-white/95 px-5 pt-2 pb-5 backdrop-blur lg:px-6">
+        <div className="sticky bottom-0 mt-auto flex flex-col gap-2 bg-white/95 px-5 pt-2 pb-5 backdrop-blur lg:px-6">
+          <button
+            onClick={onMulaiSimulasi}
+            className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-md transition active:scale-[0.98] ${
+              simulasiAktif
+                ? 'bg-amber-500 hover:bg-amber-600'
+                : 'bg-[#09B58D] hover:bg-[#079977]'
+            }`}
+          >
+            <IconBus className="h-5 w-5" />
+            {simulasiAktif ? 'Sedang Simulasi Jalan...' : 'Mulai Simulasi Jalan'}
+          </button>
           <PrimaryButton onClick={onTampilkan}>
             <IconPin className="h-5 w-5" /> Tampilkan di Peta
           </PrimaryButton>

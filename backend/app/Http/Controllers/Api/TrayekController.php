@@ -59,6 +59,43 @@ class TrayekController extends Controller
         return $out;
     }
 
+    /**
+     * Titik tiap jalan yang dilewati rute (urut): nama jalan + koordinat tengah jalan itu.
+     * Ruas berurutan bernama sama digabung; potongan < 40 m dibuang (sama seperti urutanJalan).
+     */
+    private function titikJalan(int $ruteId): array
+    {
+        $rows = DB::select("
+            SELECT j.nama_tampil AS nama, j.panjang_m,
+                   ST_Y(ST_ClosestPoint(k.geom, ST_Centroid(k.geom))) AS lat,
+                   ST_X(ST_ClosestPoint(k.geom, ST_Centroid(k.geom))) AS lng
+            FROM naik.rute_ruas_jalan rr
+            JOIN naik.ruas_jalan j ON j.ruas_id = rr.ruas_id
+            JOIN naik.v_ruas_kepadatan k ON k.ruas_id = rr.ruas_id
+            WHERE rr.rute_id = ? ORDER BY rr.urutan", [$ruteId]);
+
+        $grup = [];
+        foreach ($rows as $j) {
+            $n = count($grup);
+            if ($n && $grup[$n - 1]['nama'] === $j->nama) {
+                $grup[$n - 1]['m'] += (float) $j->panjang_m;
+            } else {
+                $grup[] = ['nama' => $j->nama, 'm' => (float) $j->panjang_m, 'lat' => (float) $j->lat, 'lng' => (float) $j->lng];
+            }
+        }
+        $out = [];
+        foreach ($grup as $g) {
+            if ($g['m'] < 40) {
+                continue;
+            }
+            if ($out && end($out)['nama'] === $g['nama']) {
+                continue;
+            }
+            $out[] = ['nama' => $g['nama'], 'lat' => $g['lat'], 'lng' => $g['lng']];
+        }
+        return $out;
+    }
+
     /** GET /api/trayek — daftar trayek (buat dropdown filter & legenda). */
     public function trayek(): JsonResponse
     {
@@ -120,6 +157,7 @@ class TrayekController extends Controller
                 FROM naik.rute_ruas_jalan rr JOIN naik.ruas_jalan j ON j.ruas_id = rr.ruas_id
                 WHERE rr.rute_id = ? ORDER BY rr.urutan", [$r->rute_id]);
             $r->urutan_jalan = $this->urutanJalan($jalan);
+            $r->titik_jalan = $this->titikJalan($r->rute_id);
             $r->panjang_m = (float) $r->panjang_m;
             $r->halte = explode(' > ', $r->lintasan);
             unset($r->lintasan);

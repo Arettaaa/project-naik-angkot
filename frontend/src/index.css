@@ -1,6 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Google+Sans+Flex:opsz,wdth,wght@6..144,25..151,100..1000&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
+@custom-variant hover (&:hover);
+@custom-variant group-hover (.group:hover &);
+
 @theme {
   --font-display: "Bricolage Grotesque", sans-serif;
   --font-sans: "Google Sans Flex", "Google Sans", Arial, sans-serif;

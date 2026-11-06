@@ -13,7 +13,7 @@ import DetailRute from './DetailRute'
 import ChipRute from './ChipRute'
 import LayerRuteTerpilih from './LayerRuteTerpilih'
 
-// Menu Rute: Daftar Rute + popup + Detail Rute + chip.
+// Menu Rute: Daftar Rute + popup + Detail Rute + chip + simulasi perjalanan.
 export default function RutePanel() {
   const { kode } = useParams()
   const [search] = useSearchParams()
@@ -25,12 +25,24 @@ export default function RutePanel() {
   const [detailBuka, setDetailBuka] = useState(true)
   const [ruteId, setRuteId] = useState(null)
   const [popup, setPopup] = useState(null)
+  const [simulasiAktif, setSimulasiAktif] = useState(false)
 
   const kodePenuh = kode ? `Trayek ${nomor(kode).padStart(2, '0')}` : null
   const fitur = useMemo(() => rute.data?.features.filter((f) => f.properties.kode_trayek === kodePenuh) ?? [], [rute.data, kodePenuh])
   const dipilih = fitur.find((f) => f.properties.rute_id === ruteId) ?? fitur[0]
   const lainnya = fitur.filter((f) => f !== dipilih)
   const detail = useApi(kodePenuh ? () => api.detailTrayek(kodePenuh) : null, [kodePenuh])
+  const arahDetail = detail.data?.rute.find((r) => r.rute_id === dipilih?.properties.rute_id)
+  const [titikAktif, setTitikAktif] = useState(null)
+
+  useEffect(() => {
+    setTitikAktif(null)
+  }, [kodePenuh, ruteId])
+
+  // Reset simulasi saat ganti rute/trayek
+  useEffect(() => {
+    setSimulasiAktif(false)
+  }, [kodePenuh, ruteId])
 
   // arah dari ?arah=rute_id (mis. dari popup Beranda), default arah pertama
   useEffect(() => {
@@ -84,6 +96,9 @@ export default function RutePanel() {
           bisaBalik={lainnya.length > 0}
           onBalik={() => setRuteId(lainnya[0].properties.rute_id)}
           onClose={() => setDetailBuka(false)}
+          simulasiAktif={simulasiAktif}
+          onMulaiSimulasi={() => setSimulasiAktif(true)}
+          onPilihTitik={(idx) => setTitikAktif({ idx, n: Date.now() })}
           onTampilkan={() => {
             const b = batas(dipilih)
             if (b.isValid()) map.flyToBounds(b, { padding: [60, 60] })
@@ -94,7 +109,19 @@ export default function RutePanel() {
 
       {dipilih && <ChipRute rute={dipilih.properties} />}
 
-      <LayerRuteTerpilih semua={!kodePenuh ? rute.data : null} dipilih={dipilih} lainnya={lainnya} onKlik={(posisi, props) => setPopup({ posisi, props })} />
+      <LayerRuteTerpilih
+        semua={!kodePenuh ? rute.data : null}
+        dipilih={dipilih}
+        lainnya={lainnya}
+        titikJalan={arahDetail?.titik_jalan}
+        halte={arahDetail?.halte}
+        titikAktif={titikAktif}
+        onKlik={(posisi, props) => setPopup({ posisi, props })}
+        simulasiAktif={simulasiAktif}
+        onMulaiSimulasi={() => setSimulasiAktif(true)}
+        onSelesaiSimulasi={() => setSimulasiAktif(false)}
+      />
+
       <RutePopup posisi={popup?.posisi} rute={popup?.props} onClose={() => setPopup(null)} onDetail={() => bukaDetail(popup.props)} />
     </>
   )

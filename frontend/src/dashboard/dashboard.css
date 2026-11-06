@@ -40,3 +40,33 @@
 .naik-popup .leaflet-popup-content p {
   margin: 0;
 }
+
+@keyframes naik-pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.naik-tag-jalan.leaflet-tooltip {
+  border: 0;
+  border-radius: 8px;
+  padding: 2px 8px;
+  color: #0d404f;
+  box-shadow: 0 2px 8px rgba(13, 64, 79, 0.18);
+}
+
+.naik-icon-awal,
+.naik-icon-tujuan,
+.naik-icon-angkot {
+  background: transparent !important;
+  border: none !important;
+}

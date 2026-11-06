@@ -54,9 +54,64 @@ export default function DashboardLayout() {
     })
   }, [])
 
+  // warna rute pilihan pengguna per trayek (disimpan di localStorage)
+  const [warnaKustom, setWarnaKustomState] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('naik-warna-rute') ?? '{}')
+    } catch {
+      return {}
+    }
+  })
+  const setWarnaTrayek = useCallback((kode, warna) => {
+    setWarnaKustomState((s) => {
+      const next = { ...s }
+      if (warna) next[kode] = warna
+      else delete next[kode]
+      try {
+        localStorage.setItem('naik-warna-rute', JSON.stringify(next))
+      } catch {
+        /* abaikan */
+      }
+      return next
+    })
+  }, [])
+
+  const trayekW = useMemo(
+    () => (trayek.data ? { ...trayek, data: trayek.data.map((t) => ({ ...t, warna: warnaKustom[t.kode_trayek] ?? t.warna })) } : trayek),
+    [trayek, warnaKustom],
+  )
+  const ruteW = useMemo(
+    () =>
+      rute.data
+        ? {
+            ...rute,
+            data: {
+              ...rute.data,
+              features: rute.data.features.map((f) => ({
+                ...f,
+                properties: { ...f.properties, warna: warnaKustom[f.properties.kode_trayek] ?? f.properties.warna },
+              })),
+            },
+          }
+        : rute,
+    [rute, warnaKustom],
+  )
+
   const ctx = useMemo(
-    () => ({ trayek, rute, kepadatan, butuhKepadatan, layers, setLayers, filter, setFilter, muatUlang: () => setUlang((x) => x + 1) }),
-    [trayek, rute, kepadatan, butuhKepadatan, layers, filter],
+    () => ({
+      trayek: trayekW,
+      rute: ruteW,
+      kepadatan,
+      butuhKepadatan,
+      layers,
+      setLayers,
+      filter,
+      setFilter,
+      setWarnaTrayek,
+      warnaKustom,
+      muatUlang: () => setUlang((x) => x + 1),
+    }),
+    [trayekW, ruteW, kepadatan, butuhKepadatan, layers, filter, setWarnaTrayek, warnaKustom],
   )
 
   return (
