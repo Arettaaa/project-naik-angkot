@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { MapContainer, TileLayer } from 'react-leaflet'
 import { api } from '../api/naik'
 import { PUSAT_BOGOR } from '../data/tempat'
@@ -16,10 +16,11 @@ export default function DashboardLayout() {
   const [rute, setRute] = useState({ data: null, loading: true, error: null })
   const [kepadatan, setKepadatan] = useState({ data: null, loading: false, error: null })
   const [ulang, setUlang] = useState(0)
+  const halaman = useLocation().pathname.split('/')[1] || 'peta'
 
   // layer & filter dipakai bersama (Beranda mengatur, peta menampilkan)
-  const [layers, setLayers] = useState({ jalan: true, rute: true, kepadatan: false })
-  const [filter, setFilter] = useState({ kode: '', asal: '', tujuan: '' })
+  const [layers, setLayers] = useState({ jalan: false, rute: true, kepadatan: false })
+  const [filter, setFilter] = useState({ kode: [] }) // kode: daftar kode trayek yang dipilih di Beranda
 
   useEffect(() => {
     let aktif = true
@@ -116,7 +117,7 @@ export default function DashboardLayout() {
 
   return (
     <DashboardCtx.Provider value={ctx}>
-      <div className="naik-dashboard h-dvh w-full bg-[#E7ECEA] font-sans text-dark">
+      <div data-halaman={halaman} className="naik-dashboard h-dvh w-full bg-[#E7ECEA] font-sans text-dark">
         <MapContainer center={PUSAT_BOGOR} zoom={13} minZoom={11} zoomControl={false} preferCanvas className="h-full w-full">
           <TileLayer
             url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"

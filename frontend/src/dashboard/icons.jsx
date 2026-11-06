@@ -28,3 +28,5 @@ export const IconEyeOff = I(<><path d="M10.7 5.1a10.7 10.7 0 0 1 11.2 6.6 1 1 0 
 export const IconPin = I(<><path d="M20 10c0 5-5.5 10.2-7.4 11.8a1 1 0 0 1-1.2 0C9.5 20.2 4 15 4 10a8 8 0 0 1 16 0" /><circle cx="12" cy="10" r="3" /></>)
 export const IconSignpost = I(<><path d="M12 3v3M12 16v5M18 6H6a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h12l3-2z" /><path d="M6 12h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H6l-3-2z" /></>)
 export const IconSwap = I(<><path d="m3 16 4 4 4-4M7 20V4M21 8l-4-4-4 4M17 4v16" /></>)
+export const IconChevronUp = I(<path d="m18 15-6-6-6 6" />)
+export const IconNavigation = I(<path d="m3 11 19-9-9 19-2-8z" />)

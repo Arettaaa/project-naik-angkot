@@ -70,3 +70,10 @@
   background: transparent !important;
   border: none !important;
 }
+
+/* HP di Beranda: atribusi peta pindah ke dalam bottom sheet */
+@media (max-width: 1023px) {
+  .naik-dashboard[data-halaman='peta'] .leaflet-control-attribution {
+    display: none;
+  }
+}

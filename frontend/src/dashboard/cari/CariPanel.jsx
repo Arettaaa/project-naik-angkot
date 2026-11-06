@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { CircleMarker, GeoJSON, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import { api } from '../../api/naik'
-import { TEMPAT } from '../../data/tempat'
+import KolomTempat from '../components/KolomTempat'
 import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
 import { useDashboard } from '../context'
 import { Card, CardHeader, Floating, KodeBadge as Badge, PrimaryButton } from '../ui'
@@ -53,6 +53,26 @@ export default function CariPanel() {
   const [hasil, setHasil] = useState({ data: null, loading: false, error: null })
   const [pilih, setPilih] = useState(null) // {jenis:'langsung'|'transfer', i}
   const [lokasiErr, setLokasiErr] = useState('')
+
+  // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, coba lokasi saya sebagai asal, lalu cari otomatis
+  const [params] = useSearchParams()
+  const otomatis = useRef(false)
+  useEffect(() => {
+    const ke = params.get('ke')?.split(',').map(Number)
+    if (!ke || ke.length !== 2 || ke.some((x) => !Number.isFinite(x))) return
+    setTitik('tujuan', { lat: ke[0], lng: ke[1], nama: params.get('nama') || 'Tujuan' })
+    setMode('asal')
+    otomatis.current = true
+    lokasiSaya()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params])
+  useEffect(() => {
+    if (otomatis.current && asal && tujuan) {
+      otomatis.current = false
+      cari()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asal, tujuan])
 
   function setTitik(jenis, titik) {
     if (jenis === 'asal') setAsal(titik)
@@ -161,7 +181,7 @@ export default function CariPanel() {
         </PrimaryButton>
         {(!asal || !tujuan) && (
           <p className="mt-2 text-center text-xs text-dark/50">
-            Pilih dari daftar, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
+            Ketik nama tempat, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
           </p>
         )}
       </div>
@@ -211,20 +231,7 @@ function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, extra }) {
         </span>
         {extra}
       </div>
-      <select
-        value={TEMPAT.find((t) => titik && t.lat === titik.lat && t.lng === titik.lng)?.nama ?? ''}
-        onFocus={onAktif}
-        onChange={(e) => {
-          const t = TEMPAT.find((x) => x.nama === e.target.value)
-          if (t) onPilih(t)
-        }}
-        className="w-full rounded-lg border border-border-nav bg-white px-2.5 py-2 text-sm"
-      >
-        <option value="">{titik ? `${titik.nama} (${titik.lat.toFixed(4)}, ${titik.lng.toFixed(4)})` : 'Pilih tempat…'}</option>
-        {TEMPAT.map((t) => (
-          <option key={t.nama} value={t.nama}>{t.nama}</option>
-        ))}
-      </select>
+      <KolomTempat titik={titik} onPilih={onPilih} onFocus={onAktif} placeholder={label === 'Dari' ? 'Dari mana? (ketik / klik peta)' : 'Mau ke mana? (ketik / klik peta)'} />
       <button onClick={onAktif} className={`mt-2 text-xs font-semibold ${aktif ? 'text-primary' : 'text-dark/60 hover:text-primary'}`}>
         {aktif ? '● Klik peta untuk memilih titik' : 'Pilih di peta'}
       </button>

@@ -133,3 +133,35 @@ export function Muat({ loading, error, onRetry }) {
     </div>
   )
 }
+
+// Bottom sheet (khusus HP): ketuk / geser pegangan ke atas untuk membuka, ke bawah untuk menutup.
+export function BottomSheet({ terbuka, setTerbuka, atas, children, className = '' }) {
+  const y0 = useRef(null)
+  const turun = (e) => (y0.current = e.clientY)
+  const naik = (e) => {
+    if (y0.current == null) return
+    const dy = e.clientY - y0.current
+    y0.current = null
+    if (dy < -24) setTerbuka(true)
+    else if (dy > 24) setTerbuka(false)
+    else setTerbuka(!terbuka)
+  }
+  return (
+    <Floating className={`right-0 bottom-0 left-0 !z-[999] ${className}`}>
+      {atas && <div className="pointer-events-none absolute right-3 -top-[60px] [&>*]:pointer-events-auto">{atas}</div>}
+      <div className="rounded-t-[26px] bg-white pb-[calc(84px+env(safe-area-inset-bottom))] shadow-[0_-8px_30px_rgba(21,30,44,0.14)]">
+        <button
+          type="button"
+          aria-label={terbuka ? 'Ciutkan panel' : 'Buka panel'}
+          aria-expanded={terbuka}
+          onPointerDown={turun}
+          onPointerUp={naik}
+          className="flex w-full touch-none justify-center pt-2.5 pb-1.5"
+        >
+          <span className="h-1.5 w-10 rounded-full bg-[#D5DEE0]" />
+        </button>
+        {children}
+      </div>
+    </Floating>
+  )
+}
