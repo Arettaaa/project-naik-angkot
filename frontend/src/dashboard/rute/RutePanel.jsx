@@ -27,11 +27,22 @@ export default function RutePanel() {
   const [popup, setPopup] = useState(null)
   const [simulasiAktif, setSimulasiAktif] = useState(false)
 
-  const kodePenuh = kode ? `Trayek ${nomor(kode).padStart(2, '0')}` : null
-  const fitur = useMemo(() => rute.data?.features.filter((f) => f.properties.kode_trayek === kodePenuh) ?? [], [rute.data, kodePenuh])
+  const kodePenuh = useMemo(() => {
+    if (!kode) return null
+    const nomorTarget = nomor(kode)
+    const cocok = rute.data?.features.find((f) => nomor(f.properties.kode_trayek) === nomorTarget)
+    return cocok?.properties.kode_trayek || `Trayek ${nomorTarget.padStart(2, '0')}`
+  }, [kode, rute.data])
+
+  const fitur = useMemo(() => {
+    if (!rute.data || !kode) return []
+    const nomorTarget = nomor(kode)
+    return rute.data.features.filter((f) => nomor(f.properties.kode_trayek) === nomorTarget)
+  }, [rute.data, kode])
+
   const dipilih = fitur.find((f) => f.properties.rute_id === ruteId) ?? fitur[0]
   const lainnya = fitur.filter((f) => f !== dipilih)
-  const detail = useApi(kodePenuh ? () => api.detailTrayek(kodePenuh) : null, [kodePenuh])
+  const detail = useApi(kode ? () => api.detailTrayek(kode) : null, [kode])
   const arahDetail = detail.data?.rute.find((r) => r.rute_id === dipilih?.properties.rute_id)
   const [titikAktif, setTitikAktif] = useState(null)
 
@@ -58,7 +69,7 @@ export default function RutePanel() {
     const b = batas(dipilih)
     if (b.isValid())
       map.fitBounds(b, layarBesar() ? { paddingTopLeft: [440, 40], paddingBottomRight: [420, 120] } : { paddingTopLeft: [20, 80], paddingBottomRight: [20, Math.round(window.innerHeight * 0.55)] })
-    setPopup(layarBesar() ? { posisi: titikTengah(dipilih), props: dipilih.properties } : null)
+    setPopup({ posisi: titikTengah(dipilih), props: dipilih.properties })
   }, [dipilih, map])
 
   function bukaDetail(p) {

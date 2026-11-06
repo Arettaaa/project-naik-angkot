@@ -24,7 +24,7 @@ class TrayekController extends Controller
         if (stripos($k, 'trayek') === 0) {
             return 'Trayek ' . trim(substr($k, 6));
         }
-        if (preg_match('/^(\d+)([A-Za-z]*)$/', $k, $m)) {
+        if (preg_match('/^0*(\d+)([A-Za-z]*)$/', $k, $m)) {
             return 'Trayek ' . str_pad($m[1], 2, '0', STR_PAD_LEFT) . strtoupper($m[2]);
         }
         return $k;
@@ -65,35 +65,39 @@ class TrayekController extends Controller
      */
     private function titikJalan(int $ruteId): array
     {
-        $rows = DB::select("
-            SELECT j.nama_tampil AS nama, j.panjang_m,
-                   ST_Y(ST_ClosestPoint(k.geom, ST_Centroid(k.geom))) AS lat,
-                   ST_X(ST_ClosestPoint(k.geom, ST_Centroid(k.geom))) AS lng
-            FROM naik.rute_ruas_jalan rr
-            JOIN naik.ruas_jalan j ON j.ruas_id = rr.ruas_id
-            JOIN naik.v_ruas_kepadatan k ON k.ruas_id = rr.ruas_id
-            WHERE rr.rute_id = ? ORDER BY rr.urutan", [$ruteId]);
+        try {
+            $rows = DB::select("
+                SELECT j.nama_tampil AS nama, j.panjang_m,
+                       ST_Y(ST_ClosestPoint(k.geom, ST_Centroid(k.geom))) AS lat,
+                       ST_X(ST_ClosestPoint(k.geom, ST_Centroid(k.geom))) AS lng
+                FROM naik.rute_ruas_jalan rr
+                JOIN naik.ruas_jalan j ON j.ruas_id = rr.ruas_id
+                JOIN naik.v_ruas_kepadatan k ON k.ruas_id = rr.ruas_id
+                WHERE rr.rute_id = ? ORDER BY rr.urutan", [$ruteId]);
 
-        $grup = [];
-        foreach ($rows as $j) {
-            $n = count($grup);
-            if ($n && $grup[$n - 1]['nama'] === $j->nama) {
-                $grup[$n - 1]['m'] += (float) $j->panjang_m;
-            } else {
-                $grup[] = ['nama' => $j->nama, 'm' => (float) $j->panjang_m, 'lat' => (float) $j->lat, 'lng' => (float) $j->lng];
+            $grup = [];
+            foreach ($rows as $j) {
+                $n = count($grup);
+                if ($n && $grup[$n - 1]['nama'] === $j->nama) {
+                    $grup[$n - 1]['m'] += (float) $j->panjang_m;
+                } else {
+                    $grup[] = ['nama' => $j->nama, 'm' => (float) $j->panjang_m, 'lat' => (float) $j->lat, 'lng' => (float) $j->lng];
+                }
             }
+            $out = [];
+            foreach ($grup as $g) {
+                if ($g['m'] < 40) {
+                    continue;
+                }
+                if ($out && end($out)['nama'] === $g['nama']) {
+                    continue;
+                }
+                $out[] = ['nama' => $g['nama'], 'lat' => $g['lat'], 'lng' => $g['lng']];
+            }
+            return $out;
+        } catch (\Throwable $e) {
+            return [];
         }
-        $out = [];
-        foreach ($grup as $g) {
-            if ($g['m'] < 40) {
-                continue;
-            }
-            if ($out && end($out)['nama'] === $g['nama']) {
-                continue;
-            }
-            $out[] = ['nama' => $g['nama'], 'lat' => $g['lat'], 'lng' => $g['lng']];
-        }
-        return $out;
     }
 
     /** GET /api/trayek — daftar trayek (buat dropdown filter & legenda). */
@@ -139,14 +143,22 @@ class TrayekController extends Controller
     /** GET /api/trayek/{kode} — detail satu trayek: arah, lintasan, urutan jalan, tarif. */
     public function detail(string $kode): JsonResponse
     {
-        $kode = $this->kode($kode);
+        $input = trim(urldecode($kode));
+        $kodeTrayek = $this->kode($input);
+
+        // Cari dengan beberapa variasi kode: persis input, hasil format kode(), atau tanpa prefix
         $rute = DB::select("
             SELECT r.rute_id, r.arah, r.nama_trayek, r.asal, r.tujuan, r.lintasan,
                    g.panjang_m, s.nama_sumber AS sumber
             FROM naik.rute r
             JOIN naik.rute_geometri g ON g.rute_id = r.rute_id
             LEFT JOIN naik.sumber_data s ON s.sumber_id = r.sumber_id
-            WHERE r.kode_trayek = ? ORDER BY r.rute_id", [$kode]);
+            WHERE r.kode_trayek = ? 
+               OR r.kode_trayek = ?
+               OR LOWER(r.kode_trayek) = LOWER(?)
+               OR regexp_replace(r.kode_trayek, '^Trayek\s*', '', 'i') = regexp_replace(?, '^Trayek\s*', '', 'i')
+            ORDER BY r.rute_id", [$input, $kodeTrayek, $input, $input]);
+
         if (!$rute) {
             return response()->json(['message' => "Trayek $kode tidak ditemukan"], 404);
         }
@@ -162,10 +174,11 @@ class TrayekController extends Controller
             $r->halte = explode(' > ', $r->lintasan);
             unset($r->lintasan);
         }
-        $tarif = DB::selectOne("SELECT tarif, keterangan FROM naik.tarif_rute WHERE kode_trayek = ?", [$kode]);
+        $kodeDb = $rute[0]->kode_trayek ?? $kodeTrayek;
+        $tarif = DB::selectOne("SELECT tarif, keterangan FROM naik.tarif_rute WHERE kode_trayek = ? OR kode_trayek = ?", [$kodeDb, $input]);
         return response()->json([
-            'kode_trayek' => $kode,
-            'warna' => '#' . substr(md5($kode), 0, 6),
+            'kode_trayek' => $kodeDb,
+            'warna' => '#' . substr(md5($kodeDb), 0, 6),
             'tarif' => $tarif ? (int) $tarif->tarif : null,
             'keterangan_tarif' => $tarif->keterangan ?? null,
             'rute' => $rute,
