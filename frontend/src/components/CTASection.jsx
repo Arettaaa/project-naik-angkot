@@ -13,17 +13,21 @@ export default function CTASection() {
       aria-labelledby="cta-title"
       className="relative isolate z-10 -mt-[10cqw] w-full overflow-hidden bg-guide-hill min-[1920px]:left-1/2 min-[1920px]:w-[calc(100vw-15px)] min-[1920px]:max-w-[2560px] min-[1920px]:-translate-x-1/2 min-[1920px]:[container-type:inline-size]"
     >
-      {/* Awan: naik mengikuti scroll (--awan-p 1 -> 0), putih di bawahnya ikut naik sehingga tidak ada celah */}
+      {/* Dasar putih solid penuh di separuh bawah CTASection agar sambungan ke footer selalu putih murni */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 top-[26cqw] -z-20 bg-white" />
+
+      {/* Awan: naik anggun mengikuti scroll (--awan-p 1 -> 0), 100% solid, bersih & tanpa garis potong horizontal */}
       <div
         ref={awanRef}
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 -z-10 [--awan-p:1] will-change-transform"
         style={{
-          transform: 'translate3d(0, calc(var(--awan-p) * 14cqw), 0)',
-          opacity: 'calc(1 - var(--awan-p) * 0.85)',
+          transform: 'translate3d(0, calc(var(--awan-p) * 8cqw), 0)',
         }}
       >
         <img src={awanCta} alt="" className="block h-auto w-full select-none" />
+        {/* Bidang putih mulus yang menyambung di dasar awan dan bergerak sinkron bersama awan */}
+        <div className="h-[120cqw] w-full bg-white -mt-[1px]" />
       </div>
 
       {/* Konten: padding atas mengikuti lebar (cqw) supaya selalu jatuh di area putih di bawah awan */}

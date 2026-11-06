@@ -27,6 +27,70 @@ const SEGMEN_JALUR = [
   { awal: 65.0494, akhir: 99.5043 },
 ]
 
+const DAFTAR_POHON = [
+  // 1. Bawah Card 01 / kiri Card 02 (sesuai gambar mockup user)
+  { left: 21.6, top: 53.4, tipe: 1, scale: 1.15, delay: '0s' },
+  // 2. Tengah atas di antara Card 01 & 03, di atas Card 02 (sesuai gambar mockup user)
+  { left: 44.5, top: 27.5, tipe: 2, scale: 1.1, delay: '1.2s' },
+  // 3. Kanan atas dekat bangunan & di atas Card 04 (sesuai gambar mockup user)
+  { left: 70.8, top: 24.8, tipe: 1, scale: 1.05, delay: '0.6s' },
+  // 4. Bawah Card 04 (sesuai gambar mockup user)
+  { left: 75.4, top: 61.4, tipe: 1, scale: 1.18, delay: '1.8s' },
+  // 5. Lereng bukit kiri jauh (membuat area kiri tidak sepi)
+  { left: 5.2, top: 46.8, tipe: 2, scale: 0.95, delay: '2.1s' },
+  // 6. Lereng bukit kanan jauh (menyeimbangkan area kanan)
+  { left: 93.6, top: 48.8, tipe: 1, scale: 1.02, delay: '0.9s' },
+  // 7. Area lereng tengah bawah di antara Card 02 & Card 04
+  { left: 49.5, top: 58.2, tipe: 3, scale: 0.92, delay: '1.5s' },
+  // 8. Lereng atas kiri di bawah bangunan / pembatas
+  { left: 27.2, top: 28.8, tipe: 3, scale: 0.88, delay: '2.4s' },
+]
+
+function PohonVektor({ tipe = 1 }) {
+  if (tipe === 2) {
+    // Tipe 2: Pohon bertingkat 2 bulatan lembut (double-bulb)
+    return (
+      <svg viewBox="0 0 28 52" fill="none" className="h-full w-full overflow-visible" aria-hidden="true">
+        <ellipse cx="14" cy="49" rx="8" ry="2.5" fill="#20583E" opacity="0.32" />
+        <rect x="12.5" y="28" width="3" height="21" rx="1.5" fill="#78C6A0" />
+        <ellipse cx="14" cy="27" rx="11" ry="11.5" fill="#226144" />
+        <ellipse cx="15.5" cy="25.5" rx="9" ry="9" fill="#2A7352" opacity="0.6" />
+        <ellipse cx="14" cy="15" rx="8.5" ry="9.5" fill="#266D4C" />
+        <ellipse cx="15.2" cy="13.8" rx="6.5" ry="7.5" fill="#32835E" opacity="0.55" />
+      </svg>
+    )
+  }
+
+  if (tipe === 3) {
+    // Tipe 3: Pohon ramping minimalis (slender pill)
+    return (
+      <svg viewBox="0 0 24 48" fill="none" className="h-full w-full overflow-visible" aria-hidden="true">
+        <ellipse cx="12" cy="45.5" rx="6.5" ry="2" fill="#20583E" opacity="0.3" />
+        <rect x="10.5" y="26" width="3" height="19.5" rx="1.5" fill="#7ECBA5" />
+        <rect x="4" y="2" width="16" height="29" rx="8" fill="#236546" />
+        <rect x="6" y="4" width="12" height="24" rx="6" fill="#2D7A55" opacity="0.5" />
+      </svg>
+    )
+  }
+
+  // Tipe 1 (Default): Pohon kapsul rounded (persis sketsa mockup user)
+  return (
+    <svg viewBox="0 0 28 52" fill="none" className="h-full w-full overflow-visible" aria-hidden="true">
+      <ellipse cx="14" cy="48.5" rx="7.5" ry="2.5" fill="#20583E" opacity="0.35" />
+      <rect x="12.5" y="28" width="3" height="20" rx="1.5" fill="#76C49E" />
+      <path
+        d="M 14 3 C 21 3, 24.5 9, 24.5 19 C 24.5 29, 21.5 35, 14 35 C 6.5 35, 3.5 29, 3.5 19 C 3.5 9, 7 3, 14 3 Z"
+        fill="#246748"
+      />
+      <path
+        d="M 14 5 C 19.5 5, 22 10, 22 18 C 22 26, 19.5 32, 14 32 C 12.5 32, 11 31, 10 29.5 C 14 28, 17 23, 17 17 C 17 11, 14 7, 12 5.5 C 12.6 5.2, 13.3 5, 14 5 Z"
+        fill="#2D7B57"
+        opacity="0.65"
+      />
+    </svg>
+  )
+}
+
 function Sparkles() {
   return (
     <img
@@ -65,6 +129,27 @@ export default function CaraKerja() {
         aria-hidden="true"
         className="pointer-events-none absolute left-0 top-0 z-[1] h-auto w-full max-w-none select-none"
       />
+
+      {/* Vektor pohon dekoratif di lereng bukit agar tidak sepi */}
+      <div className="pointer-events-none absolute inset-0 z-[2] hidden lg:block" aria-hidden="true">
+        {DAFTAR_POHON.map((pohon, index) => (
+          <div
+            key={index}
+            className="cara-kerja-tree absolute select-none"
+            style={{
+              left: `${pohon.left}cqw`,
+              top: `${pohon.top}cqw`,
+              width: `${1.9444 * pohon.scale}cqw`,
+              height: `${3.8889 * pohon.scale}cqw`,
+              transformOrigin: 'bottom center',
+              animation: 'pohonGoyang 5s ease-in-out infinite',
+              animationDelay: pohon.delay,
+            }}
+          >
+            <PohonVektor tipe={pohon.tipe} />
+          </div>
+        ))}
+      </div>
 
       <div className="pointer-events-none absolute inset-0 z-[4] hidden lg:block" aria-hidden="true">
         {SEGMEN_JALUR.map((segment, index) => {

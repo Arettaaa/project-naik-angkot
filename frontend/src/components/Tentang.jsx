@@ -2,9 +2,8 @@ import latarTentangHijauMuda from '../assets/tentang/latar-tentang-hijaumuda.svg
 import latarTentangHijauTua from '../assets/tentang/latar-tentang-hijautua.svg'
 import sungai from '../assets/tentang/sungai.svg'
 import latarFitur from '../assets/fitur/latar-fitur.svg'
-import petaBogor from '../assets/tentang/peta-bogor.svg'
-import petaBogorCropped from '../assets/tentang/peta-bogor-cropped.svg'
 import KartuTumpuk from './KartuTumpuk'
+import PetaBogorVektor from './PetaBogorVektor'
 
 export default function Tentang() {
   return (
@@ -70,22 +69,16 @@ export default function Tentang() {
 
           {/* Peta Bogor untuk Tablet & Mobile (viewBox presisi tanpa ruang kosong, lebar 280px sama dengan kartu) */}
           <div className="mt-4 flex w-full justify-center sm:mt-5 md:col-span-1 md:mt-0 md:justify-center lg:hidden z-20">
-            <img
-              src={petaBogorCropped}
-              role="img"
-              alt="Peta wilayah Kota Bogor per kecamatan"
-              className="w-[min(80vw,270px)] sm:w-[280px] md:w-[280px] h-auto select-none drop-shadow-md"
+            <PetaBogorVektor
+              viewBox="130 70 500 710"
+              alt="Peta wilayah Kota Bogor"
+              className="h-auto w-[min(80vw,270px)] select-none sm:w-[280px] md:w-[280px]"
             />
           </div>
 
           {/* Peta Bogor untuk Desktop (mempertahankan rasio dan koordinat asli Figma) */}
           <div className="hidden lg:block lg:absolute lg:left-[47.9cqw] lg:top-[9.72cqw] lg:w-[52.2cqw] lg:max-w-none z-20">
-            <img
-              src={petaBogor}
-              role="img"
-              alt="Peta wilayah Kota Bogor per kecamatan"
-              className="h-auto w-full select-none drop-shadow-[0_0.2778cqw_0.7639cqw_rgba(0,0,0,0.25)]"
-            />
+            <PetaBogorVektor alt="Peta wilayah Kota Bogor" className="h-auto w-full select-none" />
           </div>
         </div>
       </div>

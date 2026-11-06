@@ -54,7 +54,7 @@ export default function Navbar() {
         aria-label="Navigasi utama"
         className="fixed top-[53px] left-1/2 z-50 -translate-x-1/2
           w-[min(1201px,calc(100%-32px))] h-[70px]
-          rounded-[55px] border border-border-nav bg-white/60
+          rounded-[55px] border border-border-nav bg-white/80 backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,0.06)]
           px-[26px]
           hidden lg:flex items-center"
       >
@@ -95,7 +95,7 @@ export default function Navbar() {
       <nav
         aria-label="Navigasi utama"
         className="fixed top-3 left-4 right-4 z-50
-          rounded-[55px] border border-border-nav bg-white/60
+          rounded-[55px] border border-border-nav bg-white/80 backdrop-blur-md shadow-[0_4px_20px_rgba(0,0,0,0.06)]
           px-4 h-12 sm:top-4 sm:px-5 sm:h-[52px]
           flex lg:hidden items-center"
       >

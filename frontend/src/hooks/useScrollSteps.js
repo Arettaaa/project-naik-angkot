@@ -131,13 +131,34 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount, wrapperR
       const vh = window.innerHeight
       const tinggi = section.offsetHeight
       const u = tinggi / 71 // tinggi section = 71 satuan lebar (cqw/vw)
-      // kartu berada ±46 satuan dari atas section -> ditaruh di tengah layar, tapi bawah section tidak boleh naik di atas dasar layar
-      const topVal = Math.max(vh - tinggi, Math.min(0, vh / 2 - 46 * u))
-      section.style.top = `${topVal}px`
+
+      // 1. Posisi awal (topStart): tempatkan badge "Empat langkah mudah" (~11 * u)
+      // tepat di bawah navbar desktop (top 53px + tinggi 70px = 123px).
+      const topStart = Math.min(0, 115 - 11 * u)
+
+      // 2. Posisi akhir (topEnd): dasar kartu 02 & 04 berada di ~59 * u dari puncak section.
+      // Berikan jarak lega aman yang luas (~95px) di atas tepi bawah viewport sehingga kartu tidak mepet di dasar layar.
+      const targetEnd = vh - 95 - 59 * u
+      // topEnd tidak boleh lebih ke bawah dari topStart, dan dasar section tidak boleh naik melebihi dasar viewport (vh - tinggi).
+      const topEnd = Math.max(vh - tinggi, Math.min(topStart, targetEnd))
+
       const jarak = wrapper.offsetHeight - tinggi
       if (jarak <= 0) return
-      const progres = (topVal - wrapper.getBoundingClientRect().top) / jarak
-      const count = Math.min(stepCount, AMBANG.filter((a) => progres >= a).length)
+
+      // Progres scroll relatif dari awal pinning sampai selesai
+      const rawProgres = (topStart - wrapper.getBoundingClientRect().top) / jarak
+      const progres = Math.min(1, Math.max(0, rawProgres))
+
+      // Panning kamera ke atas secara halus saat scroll mengarah ke kartu 2 & 4
+      const panFactor = Math.min(1, Math.max(0, (progres - 0.04) / 0.52))
+      const ease = panFactor < 0.5
+        ? 2 * panFactor * panFactor
+        : 1 - Math.pow(-2 * panFactor + 2, 2) / 2
+
+      const topVal = topStart + (topEnd - topStart) * ease
+      section.style.top = `${topVal}px`
+
+      const count = Math.min(stepCount, AMBANG.filter((a) => rawProgres >= a).length)
       if (count === visibleCountRef.current) return
       clearRevealTimer()
       window.clearTimeout(fallbackTimer)

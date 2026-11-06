@@ -17,6 +17,9 @@ export default function Footer() {
 
   return (
     <footer ref={footerRef} className="relative isolate z-20 -mt-[8.5vw] min-h-[calc(660px+8.5vw)] w-full overflow-hidden bg-transparent text-white lg:min-h-[58.5vw]">
+      {/* Dasar putih solid penuh di atas ombak: menjamin area di atas ombak selalu putih bersih dan tidak pernah tembus ke latar biru (#E8F6FF) */}
+      <div className="pointer-events-none absolute inset-x-0 -top-[25vw] h-[60vw] -z-20 bg-white" />
+
       {/* Laut: naik dari bawah mengikuti scroll (--awan-p 1 -> 0) + bergoyang pelan terus-menerus */}
       <div
         ref={lautRef}
@@ -24,7 +27,7 @@ export default function Footer() {
         className="pointer-events-none absolute inset-0 z-0 [--awan-p:1] will-change-transform"
         style={{ transform: 'translate3d(0, calc(var(--awan-p) * 9vw), 0)' }}
       >
-        <div className="absolute inset-x-0 top-[8.5vw] bottom-[-9vw] bg-[#1CBDC7]" />
+        <div className="absolute inset-x-0 top-[18vw] bottom-[-12vw] bg-[#1CBDC7]" />
         <img
           src={backgroundFooter}
           alt=""
