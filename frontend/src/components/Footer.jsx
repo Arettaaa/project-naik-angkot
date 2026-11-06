@@ -1,5 +1,7 @@
+import { useRef } from 'react'
 import backgroundFooter from '../assets/footer/bg-footer.svg'
 import logoNaik from '../assets/logo-naik.svg'
+import useAwanParallax from '../hooks/useAwanParallax'
 
 const footerLinks = [
   { label: 'Beranda', href: '#' },
@@ -9,15 +11,26 @@ const footerLinks = [
 ]
 
 export default function Footer() {
+  const footerRef = useRef(null)
+  const lautRef = useRef(null)
+  useAwanParallax(footerRef, lautRef, 0.5)
+
   return (
-    <footer className="relative isolate z-20 -mt-[8.5vw] min-h-[calc(660px+8.5vw)] w-full overflow-hidden bg-transparent text-white lg:min-h-[58.5vw]">
-      <div aria-hidden="true" className="absolute inset-x-0 top-[8.5vw] bottom-0 z-0 bg-[#1CBDC7]" />
-      <img
-        src={backgroundFooter}
-        alt=""
+    <footer ref={footerRef} className="relative isolate z-20 -mt-[8.5vw] min-h-[calc(660px+8.5vw)] w-full overflow-hidden bg-transparent text-white lg:min-h-[58.5vw]">
+      {/* Laut: naik dari bawah mengikuti scroll (--awan-p 1 -> 0) + bergoyang pelan terus-menerus */}
+      <div
+        ref={lautRef}
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 z-0 h-auto w-full select-none"
-      />
+        className="pointer-events-none absolute inset-0 z-0 [--awan-p:1] will-change-transform"
+        style={{ transform: 'translate3d(0, calc(var(--awan-p) * 9vw), 0)' }}
+      >
+        <div className="absolute inset-x-0 top-[8.5vw] bottom-[-9vw] bg-[#1CBDC7]" />
+        <img
+          src={backgroundFooter}
+          alt=""
+          className="ombak-goyang absolute top-0 left-[-2%] block h-auto w-[104%] max-w-none select-none"
+        />
+      </div>
 
       <div className="relative z-10 mx-auto w-full max-w-[1216px] px-6 pb-8 pt-[calc(210px+8.5vw)] sm:px-10 lg:px-0 lg:pb-0 lg:pt-[28.5vw]">
         <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-[1.25fr_0.65fr_1fr] lg:gap-12">

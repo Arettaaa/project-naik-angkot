@@ -239,3 +239,25 @@ a {
   color: #fff;
   background: #168c77;
 }
+
+
+/* Laut di footer: bergoyang pelan ke kiri-kanan */
+.ombak-goyang {
+  animation: ombak-goyang 7s ease-in-out infinite alternate;
+}
+
+@keyframes ombak-goyang {
+  from {
+    transform: translateX(-1.4%);
+  }
+
+  to {
+    transform: translateX(1.4%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ombak-goyang {
+    animation: none;
+  }
+}

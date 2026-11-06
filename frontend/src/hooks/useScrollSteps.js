@@ -10,6 +10,8 @@ function reducer(state, action) {
       return { ...state, visibleCount: Math.min(state.visibleCount + 1, action.count) }
     case 'reveal-all':
       return { visibleCount: action.count, isResetting: false }
+    case 'set':
+      return { visibleCount: action.count, isResetting: false }
     case 'reset':
       return { visibleCount: 0, isResetting: true }
     case 'reset-complete':
@@ -19,7 +21,7 @@ function reducer(state, action) {
   }
 }
 
-export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
+export default function useScrollSteps(sectionRef, stepsRef, stepCount, wrapperRef) {
   const [state, dispatch] = useReducer(reducer, null, () => ({
     visibleCount: getReducedMotion() ? stepCount : 0,
     isResetting: false,
@@ -29,7 +31,6 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
   useEffect(() => {
     const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
     let animationFrame = 0
-    let thresholds = []
     let stepObserver
     let sectionInRange = false
     let sectionBounds = { top: 0, bottom: 0 }
@@ -120,39 +121,46 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
       }
     }
 
-    const measureDesktopThresholds = () => {
-      let previousThreshold = Number.NEGATIVE_INFINITY
-      thresholds = stepsRef.current.map((step) => {
-        if (!step) return Number.POSITIVE_INFINITY
-        const transform = getComputedStyle(step).transform
-        const translationY = transform === 'none' ? 0 : new DOMMatrixReadOnly(transform).m42
-        const documentTop = step.getBoundingClientRect().top + window.scrollY - translationY
-        const threshold = Math.max(
-          documentTop - window.innerHeight * 0.85,
-          previousThreshold + window.innerHeight * 0.22,
-        )
-        previousThreshold = threshold
-        return threshold
-      })
+    // Desktop: section di-pin (sticky) di layar, kartu muncul satu per satu mengikuti scroll di tempat.
+    // Ambang progres (0 = mulai ter-pin, 1 = pin selesai); sisa setelah kartu ke-4 jadi jeda sebelum lanjut.
+    const AMBANG = [-0.05, 0.22, 0.48, 0.74]
+    const updateDesktopPin = () => {
+      const section = sectionRef.current
+      const wrapper = wrapperRef?.current
+      if (!section || !wrapper || motionQuery.matches) return
+      const vh = window.innerHeight
+      const tinggi = section.offsetHeight
+      const u = tinggi / 71 // tinggi section = 71 satuan lebar (cqw/vw)
+      // kartu berada ±46 satuan dari atas section -> ditaruh di tengah layar, tapi bawah section tidak boleh naik di atas dasar layar
+      const topVal = Math.max(vh - tinggi, Math.min(0, vh / 2 - 46 * u))
+      section.style.top = `${topVal}px`
+      const jarak = wrapper.offsetHeight - tinggi
+      if (jarak <= 0) return
+      const progres = (topVal - wrapper.getBoundingClientRect().top) / jarak
+      const count = Math.min(stepCount, AMBANG.filter((a) => progres >= a).length)
+      if (count === visibleCountRef.current) return
+      clearRevealTimer()
+      window.clearTimeout(fallbackTimer)
+      fallbackTimer = 0
+      targetCount = count
+      visibleCountRef.current = count
+      dispatch({ type: 'set', count })
     }
 
     const scheduleScrollUpdate = () => {
       if (animationFrame) return
       animationFrame = window.requestAnimationFrame(() => {
         animationFrame = 0
+        if (!window.matchMedia('(max-width: 1023px)').matches) {
+          updateDesktopPin()
+          return
+        }
+        if (sectionRef.current) sectionRef.current.style.top = ''
         measureSectionBounds()
-        if (!window.matchMedia('(max-width: 1023px)').matches) measureDesktopThresholds()
         const scrollY = window.scrollY
         const inRange = sectionBounds.bottom >= scrollY - 100
           && sectionBounds.top <= scrollY + window.innerHeight + 100
         updateSectionRange(inRange)
-        if (!sectionInRange || window.matchMedia('(max-width: 1023px)').matches) return
-
-        let reached = -1
-        thresholds.forEach((threshold, index) => {
-          if (scrollY >= threshold) reached = index
-        })
-        if (reached >= 0) revealThrough(reached)
       })
     }
 
@@ -176,7 +184,6 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
       }
 
       stepObserver?.disconnect()
-      measureDesktopThresholds()
       scheduleScrollUpdate()
     }
 
@@ -234,7 +241,7 @@ export default function useScrollSteps(sectionRef, stepsRef, stepCount) {
       window.clearTimeout(fallbackTimer)
       clearRevealTimer()
     }
-  }, [sectionRef, stepCount, stepsRef])
+  }, [sectionRef, stepCount, stepsRef, wrapperRef])
 
   return state
 }

@@ -38,16 +38,22 @@ function Sparkles() {
 }
 
 export default function CaraKerja() {
+  const wrapperRef = useRef(null)
   const sectionRef = useRef(null)
   const stepRefs = useRef([])
-  const { visibleCount, isResetting } = useScrollSteps(sectionRef, stepRefs, langkah.length)
+  const { visibleCount, isResetting } = useScrollSteps(sectionRef, stepRefs, langkah.length, wrapperRef)
 
   return (
+    // Wrapper tinggi (desktop): ruang scroll untuk "scroll di tempat" - section di dalamnya ter-pin sampai 4 kartu muncul semua.
+    <div
+      ref={wrapperRef}
+      id="panduan"
+      className="relative z-10 -mt-[7.5694cqw] scroll-mt-[123px] lg:h-[calc(71cqw+240vh)] lg:scroll-mt-[8.5417cqw] min-[1920px]:-mt-[7.5694vw] min-[1920px]:left-1/2 min-[1920px]:h-[calc(71vw+240vh)] min-[1920px]:w-[calc(100vw-15px)] min-[1920px]:max-w-[2560px] min-[1920px]:-translate-x-1/2"
+    >
     <section
       ref={sectionRef}
-      id="panduan"
       aria-labelledby="cara-kerja-title"
-      className={`cara-kerja-section relative z-10 -mt-[7.5694cqw] min-h-[calc(100vh+160px)] w-full overflow-x-clip pb-40 pt-36 scroll-mt-[123px] max-lg:pt-32 lg:h-[94.0278cqw] lg:min-h-0 lg:overflow-clip lg:pb-0 lg:pt-0 lg:scroll-mt-[8.5417cqw] min-[1920px]:-mt-[7.5694vw] min-[1920px]:left-1/2 min-[1920px]:-translate-x-1/2 min-[1920px]:w-[calc(100vw-15px)] min-[1920px]:max-w-[2560px] min-[1920px]:[container-type:inline-size] min-[1920px]:h-[94.0278vw]${isResetting ? ' is-resetting' : ''}`}
+      className={`cara-kerja-section relative min-h-[calc(100vh+160px)] w-full overflow-x-clip pb-28 pt-36 max-lg:pt-32 lg:sticky lg:h-[71cqw] lg:min-h-0 lg:overflow-clip lg:pb-0 lg:pt-0 min-[1920px]:[container-type:inline-size] min-[1920px]:h-[71vw]${isResetting ? ' is-resetting' : ''}`}
     >
       <div
         className="pointer-events-none absolute inset-x-0 top-[53cqw] bottom-0 z-0 bg-guide-hill lg:hidden"
@@ -174,5 +180,6 @@ export default function CaraKerja() {
         </ol>
       </div>
     </section>
+    </div>
   )
 }
