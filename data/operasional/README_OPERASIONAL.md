@@ -1,4 +1,10 @@
-# Data Operasional NAIK — trayek angkot yang benar-benar beroperasi
+# Data Operasional NAIK — ARSIP / PEMBANDING
+
+> **Status (8 Nov 2026): tidak dipakai aplikasi.** Dasar data NAIK kembali ke **master plan Pemkot Bogor**
+> (rute baru angkot 14 Maret 2017, Perumda Pasar Pakuan Jaya / lapakfjbku) yang ada di `../final`.
+> Folder ini disimpan sebagai pembanding: daftar trayek hasil survei 2021 dan 5 rute bernomor lama (AK)
+> dari rekaman GPS 2016–2019. Nomor lama yang masih dipakai warga ditampilkan di aplikasi lewat
+> `frontend/src/dashboard/nomorWarga.js` (mis. 03 = "dulu 05", 30 = "dulu 08").
 
 Folder ini berisi versi **operasional** jaringan angkot Kota Bogor, yaitu 24 trayek yang tercatat
 beroperasi di lapangan. Data **rencana SK** (`../final`, 30 trayek hasil rerouting) **tidak diubah**,

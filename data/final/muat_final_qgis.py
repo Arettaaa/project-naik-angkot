@@ -70,8 +70,9 @@ print("Kepadatan:", {k: f"{km[k]/1000:.1f} km" for k in ("rendah", "sedang", "ti
 
 # ---------- cek: harus data v3 ----------
 n_artikel = sum(1 for f in tr.getFeatures() if "artikel" in str(f["sumber"]))
-print(f"Rute dari artikel: {n_artikel} (harus 60)")
-if dict(v) != {"OK": 60} or n_artikel != 60:
+n_lama = sum(1 for f in tr.getFeatures() if str(f["kode_trayek"]).endswith("AK"))
+print(f"Rute dari artikel/SK: {n_artikel} (harus 60) + trayek lama di luar SK: {n_lama} (kode berakhiran AK)")
+if v.get("OK") != tr.featureCount() or n_artikel != 60:
     raise Exception("Ini BUKAN data v3! Extract ulang NAIK_FINAL_v3.zip ke " + FOLDER)
 
 # ---------- opsional: PostGIS ----------

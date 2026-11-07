@@ -9,7 +9,8 @@ const PALET = [
 
 export function warnaTrayek(kode) {
   const n = parseInt(String(kode ?? '').replace(/\D/g, ''), 10)
-  return PALET[(Number.isFinite(n) ? n - 1 : 0) % PALET.length]
+  const lama = /AK$/i.test(String(kode ?? '')) ? 15 : 0 // trayek lama: warna beda dari nomor SK yang sama
+  return PALET[((Number.isFinite(n) ? n - 1 : 0) + lama) % PALET.length]
 }
 
 // Kelas kepadatan dari BE (sesuai metode TA): 1 / 2–3 / ≥4 trayek.

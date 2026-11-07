@@ -5,6 +5,8 @@ import { saranAwal, tempatSaya, useCariTempat, usePusatPeta, useTempatSaya } fro
 import { ItemTempat } from '../components/KolomTempat'
 import { IconSearch, IconX } from '../icons'
 import { nomor } from '../lib'
+import { nomorWarga } from '../nomorWarga'
+import { PilWarga } from '../ui'
 
 const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 
@@ -33,7 +35,10 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
     }
     const tempat = cariTempat.hasil.slice(0, 7).map((t) => ({ jenis: 'tempat', peran: 'hasil', t }))
     const rute = (trayek.data ?? [])
-      .filter((t) => nomor(t.kode_trayek).includes(k.replace(/^0+(?=\d)/, '')) || norm(t.nama_trayek).includes(k))
+      .filter((t) => {
+        const angka = k.replace(/^0+(?=\d)/, '')
+        return nomor(t.kode_trayek).includes(angka) || (nomorWarga(t.kode_trayek) ?? '').includes(angka) || norm(t.nama_trayek).includes(k)
+      })
       .slice(0, 5)
       .map((t) => ({ jenis: 'rute', t }))
     return [...tempat, ...rute, { jenis: 'peta' }]
@@ -124,6 +129,7 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
                           {nomor(s.t.kode_trayek)}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-[14.5px] font-medium text-dark">{s.t.nama_trayek}</span>
+                        <PilWarga kode={s.t.kode_trayek} />
                       </>
                     ) : null}
                   </button>

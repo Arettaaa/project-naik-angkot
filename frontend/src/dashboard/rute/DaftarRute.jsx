@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Card, CardHeader, Muat, Select } from '../ui'
 import { IconSearch, IconSliders } from '../icons'
 import { nomor, uniq } from '../lib'
+import { teksCariWarga } from '../nomorWarga'
 import KartuRute from './KartuRute'
 
 // Panel Daftar Rute Angkot: pencarian, filter asal/tujuan, daftar kartu.
@@ -17,7 +18,7 @@ export default function DaftarRute({ trayek, kodeAktif, onPilih, onClose, onRetr
   const daftar = useMemo(() => {
     const q = cari.trim().toLowerCase()
     return (trayek.data ?? []).filter((t) => {
-      const teks = `${t.kode_trayek} ${nomor(t.kode_trayek)} ${t.nama_trayek} ${t.arah.map((a) => `${a.asal} ${a.tujuan}`).join(' ')}`.toLowerCase()
+      const teks = `${t.kode_trayek} ${nomor(t.kode_trayek)}${teksCariWarga(t.kode_trayek)} ${t.nama_trayek} ${t.arah.map((a) => `${a.asal} ${a.tujuan}`).join(' ')}`.toLowerCase()
       return (!q || teks.includes(q)) && (!asal || t.arah.some((a) => a.asal === asal)) && (!tujuan || t.arah.some((a) => a.tujuan === tujuan))
     })
   }, [trayek.data, cari, asal, tujuan])

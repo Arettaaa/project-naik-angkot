@@ -7,6 +7,7 @@ import {
   IconTransfer, IconVolume, IconVolumeOff, IconWalk, IconX,
 } from '../icons'
 import { Lapisan } from '../ui'
+import { nomorLengkap } from '../nomorWarga'
 import { arahPada, dekatiSudut, halus, ikonAngkot, ikonJalan, ikutiKamera, jarakM, putarPenanda, titikPada, useJam } from '../simulasi'
 
 // Simulasi perjalanan (animasi, BUKAN pelacakan posisi asli): jalan kaki -> naik angkot -> (pindah) -> jalan kaki.
@@ -40,7 +41,7 @@ function susunLangkahNavigasi(opsi, asal, tujuan, warna) {
     },
     {
       tipe: 'angkot', titik: g1, kode: k1, warna: warna[k1], jarakM: transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m,
-      judul: `Naik angkot ${nomor(k1)}`, instruksi: `Naik angkot ${nomor(k1)} arah ${transfer ? opsi.arah_1 : opsi.arah}`,
+      judul: `Naik angkot ${nomorLengkap(k1)}`, instruksi: `Naik angkot ${nomorLengkap(k1)} arah ${transfer ? opsi.arah_1 : opsi.arah}`,
       sub: transfer ? `Turun di titik pindah ke ${nomor(opsi.kode_2)}` : 'Turun di dekat tujuan',
     },
   ]
@@ -52,7 +53,7 @@ function susunLangkahNavigasi(opsi, asal, tujuan, warna) {
       },
       {
         tipe: 'angkot', titik: g2, kode: opsi.kode_2, warna: warna[opsi.kode_2], jarakM: opsi.jarak_angkot_2_m,
-        judul: `Naik angkot ${nomor(opsi.kode_2)}`, instruksi: `Naik angkot ${nomor(opsi.kode_2)} arah ${opsi.arah_2}`,
+        judul: `Naik angkot ${nomorLengkap(opsi.kode_2)}`, instruksi: `Naik angkot ${nomorLengkap(opsi.kode_2)} arah ${opsi.arah_2}`,
         sub: 'Turun di dekat tujuan',
       },
     )
@@ -240,7 +241,7 @@ export default function NavigasiSimulasi({ opsi, asal, tujuan, warna, onKeluar, 
   const judulAtas = tiba
     ? `Sampai di ${tujuan?.nama || 'tujuan'}`
     : ui.menunggu
-      ? `Tunggu angkot ${nomor(aktif?.kode)}`
+      ? `Tunggu angkot ${nomorLengkap(aktif?.kode)}`
       : aktif?.instruksi
 
   return (
@@ -385,7 +386,7 @@ export default function NavigasiSimulasi({ opsi, asal, tujuan, warna, onKeluar, 
                         </span>
                         <span className="block text-[12px] text-dark/60">
                           {jarak(t.jarakM)} · ±{t.tipe === 'angkot' ? menitAngkot(t.jarakM) : menitJalan(t.jarakM)} mnt
-                          {t.tipe === 'angkot' ? ` · ${t.instruksi.replace(/^Naik angkot \S+ /, '')}` : ''}
+                          {t.tipe === 'angkot' ? ` · ${t.instruksi.replace(/^Naik angkot .*? arah /, 'arah ')}` : ''}
                         </span>
                       </span>
                     </button>

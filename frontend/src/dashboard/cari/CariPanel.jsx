@@ -8,7 +8,8 @@ import PinPeta from './PinPeta'
 import { tempatSaya, useLayarBesar, useTempatSaya } from '../hooks'
 import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
 import { useDashboard } from '../context'
-import { Card, CardHeader, Floating, KodeBadge as Badge } from '../ui'
+import { Card, CardHeader, Floating, KodeBadge as Badge, PilWarga } from '../ui'
+import { nomorLengkap } from '../nomorWarga'
 import {
   IconArrowLeft, IconBus, IconCap, IconChevronRight, IconHome, IconList, IconMap, IconPlay, IconSearch, IconSwap, IconTransfer, IconWalk,
 } from '../icons'
@@ -504,6 +505,9 @@ function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
                       <span className="ml-1 min-w-0 flex-1 truncate text-[13px] font-semibold text-dark">
                         {transfer ? `ke ${o.arah_2}` : o.arah}
                       </span>
+                      {kode.map((k) => (
+                        <PilWarga key={k} kode={k} />
+                      ))}
                       <span className="font-display text-[15px] font-bold text-dark">{menitOpsi(o)} mnt</span>
                     </div>
                     <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-dark/55">
@@ -589,7 +593,7 @@ function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMu
       <CardHeader
         title="Langkah Perjalanan"
         onClose={onClose}
-        subtitle={transfer ? `Angkot ${nomor(opsi.kode_1)}, pindah ke ${nomor(opsi.kode_2)}` : `Angkot ${nomor(opsi.kode_trayek)} langsung`}
+        subtitle={transfer ? `Angkot ${nomorLengkap(opsi.kode_1)}, pindah ke ${nomorLengkap(opsi.kode_2)}` : `Angkot ${nomorLengkap(opsi.kode_trayek)} langsung`}
       />
       <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-6 lg:px-6">
         <div className="grid grid-cols-4 gap-1 rounded-2xl bg-[#F6F9F9] p-3 text-center">
@@ -638,6 +642,7 @@ function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMu
           <Tahap ikon={IconBus} warna={warna[k1] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(1)} label="di angkot">
             <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-dark">
               Naik angkot <KodeBadge kode={k1} warna={warna[k1]} />
+              <PilWarga kode={k1} />
             </p>
             <p className="mt-0.5 text-[12px] text-dark/60">
               Arah {transfer ? opsi.arah_1 : opsi.arah} · {jarak(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} (±
@@ -655,6 +660,7 @@ function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMu
               <Tahap ikon={IconBus} warna={warna[opsi.kode_2] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(3)} label="di angkot">
                 <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-dark">
                   Naik angkot <KodeBadge kode={opsi.kode_2} warna={warna[opsi.kode_2]} />
+                  <PilWarga kode={opsi.kode_2} />
                 </p>
                 <p className="mt-0.5 text-[12px] text-dark/60">
                   Arah {opsi.arah_2} · {jarak(opsi.jarak_angkot_2_m)} (±{menitAngkot(opsi.jarak_angkot_2_m)} mnt)

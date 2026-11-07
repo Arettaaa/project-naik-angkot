@@ -1,5 +1,5 @@
 import { jarak, menitAngkot, rupiah } from '../../utils/format'
-import { Card, CardHeader, Floating, KodeBadge, Muat } from '../ui'
+import { Card, CardHeader, Floating, KodeBadge, Muat, PilWarga } from '../ui'
 import { IconPause, IconPin, IconPlay, IconSwap } from '../icons'
 import JalurRute from './JalurRute'
 
@@ -35,7 +35,10 @@ export default function DetailRute({
               <p className="font-display text-[16.5px] leading-snug font-bold text-dark">
                 {p.asal} → {p.tujuan}
               </p>
-              {p.arah && <p className="truncate text-[12.5px] text-dark/55">{p.arah}</p>}
+              <p className="flex items-center gap-1.5 text-[12.5px] text-dark/55">
+                {p.arah && <span className="truncate">{p.arah}</span>}
+                <PilWarga kode={p.kode_trayek} />
+              </p>
             </div>
           </div>
 

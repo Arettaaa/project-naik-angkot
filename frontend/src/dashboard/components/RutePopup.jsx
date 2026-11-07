@@ -3,6 +3,7 @@ import { jarak, menitAngkot, rupiah } from '../../utils/format'
 import { IconChevronRight, IconPlay } from '../icons'
 import { nomor } from '../lib'
 import TutupPopup from './TutupPopup'
+import { nomorWarga } from '../nomorWarga'
 
 // Kartu popup rute: nomor berwarna, asal → tujuan, arah, panjang/waktu/tarif, tombol detail (+ simulasi bila ada).
 export default function RutePopup({ posisi, rute, onDetail, onSimulasi, onClose }) {
@@ -28,6 +29,9 @@ export default function RutePopup({ posisi, rute, onDetail, onSimulasi, onClose 
             <p className="mt-0.5 text-[14.5px] leading-snug font-semibold text-dark">
               {rute.asal} <span className="text-dark/40">→</span> {rute.tujuan}
             </p>
+            {nomorWarga(rute.kode_trayek) && (
+              <p className="mt-1 text-[11.5px] text-[#8A5A00]">Warga masih menyebutnya angkot {nomorWarga(rute.kode_trayek)}</p>
+            )}
           </div>
           <TutupPopup />
         </div>

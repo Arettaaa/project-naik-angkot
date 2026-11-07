@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { IconChevronDown, IconX } from './icons'
+import { nomorWarga, trayekLama } from './nomorWarga'
 
 // Panel melayang di atas peta. Klik/scroll di dalam panel tidak menggerakkan peta.
 export function Floating({ className = '', children, ...rest }) {
@@ -128,7 +129,37 @@ export function KodeBadge({ kode, warna, size = 'md' }) {
   const s = { sm: 'h-7 w-7 rounded-lg text-xs', md: 'h-11 w-11 rounded-xl text-[17px]', lg: 'h-12 w-12 rounded-2xl text-xl' }[size]
   return (
     <span className={`inline-flex shrink-0 items-center justify-center font-display font-bold text-white ${s}`} style={{ backgroundColor: warna }}>
-      {String(kode).replace(/^Trayek\s*/i, '')}
+      {trayekLama(kode) ? (
+        <span className="flex flex-col items-center leading-none">
+          {String(kode).replace(/^Trayek\s*/i, '').replace(/AK$/i, '')}
+          <span className="mt-0.5 text-[8.5px] font-semibold tracking-wide uppercase opacity-85">lama</span>
+        </span>
+      ) : (
+        String(kode).replace(/^Trayek\s*/i, '')
+      )}
+    </span>
+  )
+}
+
+// Pil kecil "dulu 05": nomor lama yang masih dipakai warga & Moovit untuk trayek ini.
+export function PilWarga({ kode, className = '' }) {
+  if (trayekLama(kode))
+    return (
+      <span
+        title="Trayek lama di luar SK 2017 yang masih beroperasi (Moovit & keterangan warga)"
+        className={`inline-flex shrink-0 items-center rounded-full bg-[#EEF0F3] px-1.5 py-px text-[11px] font-semibold whitespace-nowrap text-[#4A5563] ${className}`}
+      >
+        trayek lama
+      </span>
+    )
+  const w = nomorWarga(kode)
+  if (!w) return null
+  return (
+    <span
+      title={`Warga & Moovit masih menyebutnya angkot ${w} (nomor sebelum rerouting 2017)`}
+      className={`inline-flex shrink-0 items-center rounded-full bg-[#FFF3D6] px-1.5 py-px text-[11px] font-semibold whitespace-nowrap text-[#8A5A00] ${className}`}
+    >
+      dulu {w}
     </span>
   )
 }
