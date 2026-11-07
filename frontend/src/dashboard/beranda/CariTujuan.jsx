@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TEMPAT } from '../../data/tempat'
-import { useCariTempat } from '../hooks'
+import { saranAwal, tempatSaya, useCariTempat, usePusatPeta, useTempatSaya } from '../hooks'
 import { ItemTempat } from '../components/KolomTempat'
-import { IconMap, IconSearch, IconX } from '../icons'
+import { IconSearch, IconX } from '../icons'
 import { nomor } from '../lib'
 
 const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -16,28 +16,40 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
   const [aktif, setAktif] = useState(0)
   const inputRef = useRef(null)
 
-  const cariTempat = useCariTempat(q)
+  const dekat = usePusatPeta()
+  const saya = useTempatSaya()
+  const cariTempat = useCariTempat(q, dekat)
   const saran = useMemo(() => {
     const k = norm(q.trim())
-    const tempat = (k ? cariTempat.hasil.slice(0, 7) : TEMPAT.slice(0, 5)).map((t) => ({ jenis: 'tempat', t }))
-    const rute = k
-      ? (trayek.data ?? [])
-          .filter((t) => nomor(t.kode_trayek).includes(k.replace(/^0+(?=\d)/, '')) || norm(t.nama_trayek).includes(k))
-          .slice(0, 5)
-          .map((t) => ({ jenis: 'rute', t }))
-      : []
+    if (k.length < 2) {
+      const awal = saranAwal(saya).map((x) => ({ ...x, jenis: 'tempat' }))
+      const populer =
+        saya.riwayat.length < 3
+          ? TEMPAT.filter((t) => !saya.riwayat.some((r) => r.nama === t.nama))
+              .slice(0, 5)
+              .map((t) => ({ jenis: 'tempat', peran: 'populer', t }))
+          : []
+      return [...awal, ...populer, { jenis: 'peta' }]
+    }
+    const tempat = cariTempat.hasil.slice(0, 7).map((t) => ({ jenis: 'tempat', peran: 'hasil', t }))
+    const rute = (trayek.data ?? [])
+      .filter((t) => nomor(t.kode_trayek).includes(k.replace(/^0+(?=\d)/, '')) || norm(t.nama_trayek).includes(k))
+      .slice(0, 5)
+      .map((t) => ({ jenis: 'rute', t }))
     return [...tempat, ...rute, { jenis: 'peta' }]
-  }, [q, trayek.data, cariTempat.hasil])
+  }, [q, trayek.data, cariTempat.hasil, saya])
 
   function pilih(s) {
     setBuka(false)
     inputRef.current?.blur()
-    if (s.jenis === 'tempat') navigate(`/cari?ke=${s.t.lat},${s.t.lng}&nama=${encodeURIComponent(s.t.nama)}`)
-    // (tempat bisa dari daftar NAIK, database POI, atau OpenStreetMap)
-    else if (s.jenis === 'rute') {
+    if (s.jenis === 'tempat') {
+      tempatSaya.tambahRiwayat(s.t)
+      const ket = s.t.ket ? `&ket=${encodeURIComponent(s.t.ket)}` : ''
+      navigate(`/cari?ke=${s.t.lat},${s.t.lng}&nama=${encodeURIComponent(s.t.nama)}${ket}`)
+    } else if (s.jenis === 'rute') {
       onPilihRute(s.t.kode_trayek)
       setQ('')
-    } else navigate('/cari')
+    } else navigate('/cari?pin=tujuan')
   }
 
   function tombol(e) {
@@ -86,18 +98,24 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
 
       {buka && (
         <div id="naik-saran" role="listbox" className="naik-scroll absolute top-[60px] right-0 left-0 z-10 max-h-[60dvh] overflow-y-auto rounded-2xl bg-white py-2 shadow-[0_12px_36px_rgba(21,30,44,0.18)]">
-          {adaTempat && <p className="px-4 pt-1 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">{q ? 'Tempat' : 'Tujuan populer'}</p>}
+          {q.trim().length >= 2 && adaTempat && <p className="px-4 pt-1 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">Tempat</p>}
           {q.trim().length >= 2 && cariTempat.loading && !adaTempat && <p className="px-4 pt-1 pb-2 text-[13px] text-dark/50">Mencari tempat…</p>}
-          {cariTempat.siap && !adaTempat && !adaRute && <p className="px-4 pt-1 pb-2 text-[13px] text-dark/55">Tempat tidak ditemukan. Coba kata lain, atau pilih titiknya langsung di peta.</p>}
+          {cariTempat.gagal && <p className="px-4 pt-1 pb-2 text-[13px] text-red-700">Pencarian tempat gagal (backend / internet). Pilih titiknya langsung di peta dulu ya.</p>}
+          {cariTempat.siap && !cariTempat.gagal && !adaTempat && !adaRute && <p className="px-4 pt-1 pb-2 text-[13px] text-dark/55">Tempat tidak ditemukan. Coba kata lain, atau pilih titiknya langsung di peta.</p>}
           {saran.map((s, i) => {
             const kelas = `flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${i === aktif ? 'bg-[#EEF6F3]' : 'hover:bg-[#F6F9F9]'}`
             const judulRute = s.jenis === 'rute' && saran[i - 1]?.jenis !== 'rute'
             return (
-              <div key={s.jenis === 'peta' ? 'peta' : `${s.jenis}-${s.t.nama ?? s.t.kode_trayek}`}>
+              <div key={s.jenis === 'peta' ? 'peta' : `${s.jenis}-${s.peran ?? ''}-${s.t.nama ?? s.t.kode_trayek}-${s.t.lat ?? ''}`}>
+                {q.trim().length < 2 && s.peran && s.peran !== saran[i - 1]?.peran && (s.peran === 'populer' || !['rumah', 'kampus', 'riwayat'].includes(saran[i - 1]?.peran)) && (
+                  <p className="px-4 pt-1.5 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">{s.peran === 'populer' ? 'Tujuan populer' : 'Tersimpan & terakhir'}</p>
+                )}
                 {judulRute && <p className="mt-1 border-t border-[#EDF1F2] px-4 pt-2.5 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">Rute angkot</p>}
                 {s.jenis === 'peta' && (adaTempat || adaRute) && <div className="my-1 border-t border-[#EDF1F2]" />}
-                {s.jenis === 'tempat' ? (
-                  <ItemTempat t={s.t} aktif={i === aktif} onClick={() => pilih(s)} onMouseEnter={() => setAktif(i)} />
+                {s.jenis === 'peta' ? (
+                  <ItemTempat peran="peta" judul="Pilih lewat peta" aktif={i === aktif} onClick={() => pilih(s)} onMouseEnter={() => setAktif(i)} />
+                ) : s.jenis === 'tempat' ? (
+                  <ItemTempat t={s.t} peran={s.peran} judul={s.judul} aktif={i === aktif} onClick={() => pilih(s)} onMouseEnter={() => setAktif(i)} />
                 ) : (
                   <button type="button" role="option" aria-selected={i === aktif} onMouseDown={(e) => e.preventDefault()} onClick={() => pilih(s)} onMouseEnter={() => setAktif(i)} className={kelas}>
                     {s.jenis === 'rute' ? (
@@ -107,14 +125,7 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
                         </span>
                         <span className="min-w-0 flex-1 truncate text-[14.5px] font-medium text-dark">{s.t.nama_trayek}</span>
                       </>
-                    ) : (
-                      <>
-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#E3F4EC] text-primary">
-                          <IconMap className="h-[18px] w-[18px]" />
-                        </span>
-                        <span className="min-w-0 flex-1 text-[14.5px] font-medium text-primary">Pilih titik di peta</span>
-                      </>
-                    )}
+                    ) : null}
                   </button>
                 )}
               </div>

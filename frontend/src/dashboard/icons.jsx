@@ -30,3 +30,7 @@ export const IconSignpost = I(<><path d="M12 3v3M12 16v5M18 6H6a1 1 0 0 0-1 1v2a
 export const IconSwap = I(<><path d="m3 16 4 4 4-4M7 20V4M21 8l-4-4-4 4M17 4v16" /></>)
 export const IconChevronUp = I(<path d="m18 15-6-6-6 6" />)
 export const IconNavigation = I(<path d="m3 11 19-9-9 19-2-8z" />)
+export const IconClock = I(<><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>)
+export const IconHome = I(<><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" /></>)
+export const IconCap = I(<><path d="M22 10 12 5 2 10l10 5 10-5Z" /><path d="M6 12v5c3 2 9 2 12 0v-5" /></>)
+export const IconStar = I(<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" />)
