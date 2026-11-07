@@ -233,8 +233,48 @@ class TrayekController extends Controller
     }
 
     /**
-     * GET /api/rekomendasi?asal=-6.59,106.79&tujuan=-6.57,106.81&radius=400
-     * Rute langsung (1 angkot) dan rute 1x transfer (2 angkot), urut dari yang paling enak.
+     * Garis rute siap hitung (UTM 48S, meter) + posisi titik transfer di tiap rute.
+     * Dibuat sekali sebagai materialized view; ikut terhapus otomatis saat buat_skema_rute_v4.py
+     * membangun ulang naik.rute / naik.titik_transfer (DROP ... CASCADE), lalu dibuat lagi di request berikutnya.
+     */
+    private function siapkanGarisRute(): void
+    {
+        $line = self::LINE;
+        $ada = DB::selectOne("SELECT to_regclass('naik.mv_rute_garis') IS NOT NULL AS g,
+                                     to_regclass('naik.mv_transfer_rute') IS NOT NULL AS t");
+        try {
+            if (!$ada->g) {
+                DB::statement("CREATE MATERIALIZED VIEW IF NOT EXISTS naik.mv_rute_garis AS
+                    SELECT ru.rute_id, ru.kode_trayek, ru.arah, ru.nama_trayek,
+                           ST_Transform($line, 32748) AS g,
+                           ST_Length(ST_Transform($line, 32748)) AS len
+                    FROM naik.rute ru JOIN naik.rute_geometri g ON g.rute_id = ru.rute_id");
+                DB::statement("CREATE INDEX IF NOT EXISTS idx_mv_rute_garis_g ON naik.mv_rute_garis USING GIST (g)");
+                DB::statement("CREATE INDEX IF NOT EXISTS idx_mv_rute_garis_id ON naik.mv_rute_garis (rute_id)");
+            }
+            if (!$ada->t) {
+                DB::statement("CREATE MATERIALIZED VIEW IF NOT EXISTS naik.mv_transfer_rute AS
+                    SELECT tt.transfer_id, r.rute_id, r.kode_trayek,
+                           ST_LineLocatePoint(r.g, ST_Transform(tt.geom, 32748)) AS f,
+                           ST_Distance(r.g, ST_Transform(tt.geom, 32748)) AS d
+                    FROM naik.titik_transfer tt
+                    JOIN naik.mv_rute_garis r ON r.kode_trayek IN (tt.trayek_a, tt.trayek_b)");
+                DB::statement("CREATE INDEX IF NOT EXISTS idx_mv_transfer_rute_rute ON naik.mv_transfer_rute (rute_id, f)");
+                DB::statement("CREATE INDEX IF NOT EXISTS idx_mv_transfer_rute_tt ON naik.mv_transfer_rute (transfer_id)");
+            }
+        } catch (\Throwable $e) {
+            // dua request bersamaan membuat view yang sama -> yang kalah cukup memakai hasil yang menang
+            if (!str_contains($e->getMessage(), 'already exists')) {
+                throw $e;
+            }
+        }
+    }
+
+    /**
+     * GET /api/rekomendasi?asal=-6.59,106.79&tujuan=-6.57,106.81[&radius=800]
+     * Rute langsung (1 angkot) dan 1x pindah (2 angkot), diurutkan dari perkiraan waktu tempuh tercepat.
+     * Jarak jalan kaki otomatis: semua jalur sampai `radius` (default 800 m) dipertimbangkan, tapi
+     * jalan kaki dihitung lambat (75 m/menit) sehingga jalur yang dekat tetap menang.
      */
     public function rekomendasi(Request $req): JsonResponse
     {
@@ -247,68 +287,78 @@ class TrayekController extends Controller
         if (!$a || !$b) {
             return response()->json(['message' => 'Format: asal=lat,lon&tujuan=lat,lon'], 422);
         }
-        $rad = min(max((float) $req->query('radius', 400), 100), 1500);   // jarak jalan kaki maks ke jalur (m)
+        $rad = min(max((float) $req->query('radius', 800), 100), 1500);   // jarak jalan kaki maks ke jalur (m)
+        $this->siapkanGarisRute();
+
+        // perkiraan waktu (menit): jalan kaki 75 m/mnt (4,5 km/jam), angkot 250 m/mnt (15 km/jam), tunggu 5 mnt/angkot
+        $JALAN = 75.0;
+        $ANGKOT = 250.0;
+        $TUNGGU = 5.0;
         $params = [$a[1], $a[0], $b[1], $b[0], $rad];
-        $line = self::LINE;
-
         $base = "
-            p AS (SELECT ST_SetSRID(ST_MakePoint(?, ?), 4326) AS a,
-                         ST_SetSRID(ST_MakePoint(?, ?), 4326) AS b, ?::float8 AS rad),
-            r AS (SELECT ru.rute_id, ru.kode_trayek, ru.arah, ru.nama_trayek, $line AS line
-                  FROM naik.rute ru JOIN naik.rute_geometri g ON g.rute_id = ru.rute_id),
-            ra AS (SELECT r.*, ST_LineLocatePoint(r.line, p.a) AS pa,
-                          ST_Distance(r.line::geography, p.a::geography) AS da
-                   FROM r, p WHERE ST_DWithin(r.line::geography, p.a::geography, p.rad)),
-            rb AS (SELECT r.*, ST_LineLocatePoint(r.line, p.b) AS pb,
-                          ST_Distance(r.line::geography, p.b::geography) AS db
-                   FROM r, p WHERE ST_DWithin(r.line::geography, p.b::geography, p.rad))";
+            p AS (SELECT ST_Transform(ST_SetSRID(ST_MakePoint(?, ?), 4326), 32748) AS a,
+                         ST_Transform(ST_SetSRID(ST_MakePoint(?, ?), 4326), 32748) AS b, ?::float8 AS rad),
+            ra AS (SELECT r.rute_id, r.kode_trayek, r.arah, r.nama_trayek, r.g, r.len,
+                          ST_LineLocatePoint(r.g, p.a) AS pa, ST_Distance(r.g, p.a) AS da
+                   FROM naik.mv_rute_garis r, p WHERE ST_DWithin(r.g, p.a, p.rad)),
+            rb AS (SELECT r.rute_id, r.kode_trayek, r.arah, r.g, r.len,
+                          ST_LineLocatePoint(r.g, p.b) AS pb, ST_Distance(r.g, p.b) AS db
+                   FROM naik.mv_rute_garis r, p WHERE ST_DWithin(r.g, p.b, p.rad))";
 
-        // ---- 1 angkot ----
+        // ---- 1 angkot: satu pilihan terbaik per trayek ----
         $langsung = DB::select("
-            WITH $base
-            SELECT ra.rute_id, ra.kode_trayek, ra.arah, ra.nama_trayek,
-                   ROUND(ra.da) AS jalan_ke_naik_m, ROUND(rb.db) AS jalan_dari_turun_m,
-                   ROUND(ST_Length(ST_LineSubstring(ra.line, ra.pa, rb.pb)::geography)) AS jarak_angkot_m,
-                   ST_AsGeoJSON(ST_LineSubstring(ra.line, ra.pa, rb.pb), 6) AS segmen,
-                   t.tarif
-            FROM ra JOIN rb ON rb.rute_id = ra.rute_id AND ra.pa < rb.pb
-            LEFT JOIN naik.tarif_rute t ON t.kode_trayek = ra.kode_trayek
-            ORDER BY ra.da + rb.db + 0.2 * ST_Length(ST_LineSubstring(ra.line, ra.pa, rb.pb)::geography)
-            LIMIT 5", $params);
-
-        // ---- 2 angkot (1x transfer di titik_transfer) ----
-        $transfer = DB::select("
             WITH $base,
             c AS (
-              SELECT ra.rute_id AS ra_id, ra.kode_trayek AS ka, ra.arah AS arah_a, ra.line AS la, ra.pa, ra.da,
-                     rb.rute_id AS rb_id, rb.kode_trayek AS kb, rb.arah AS arah_b, rb.line AS lb, rb.pb, rb.db,
-                     tt.transfer_id, tt.geom AS tg,
-                     ST_LineLocatePoint(ra.line, tt.geom) AS ta, ST_LineLocatePoint(rb.line, tt.geom) AS tb
-              FROM ra JOIN rb ON rb.kode_trayek <> ra.kode_trayek
-              JOIN naik.titik_transfer tt
-                ON (tt.trayek_a = ra.kode_trayek AND tt.trayek_b = rb.kode_trayek)
-                OR (tt.trayek_a = rb.kode_trayek AND tt.trayek_b = ra.kode_trayek)
-              WHERE NOT EXISTS (SELECT 1 FROM rb x WHERE x.rute_id = ra.rute_id)   -- kalau 1 angkot cukup, skip
-            ), s AS (
-              SELECT c.*, ST_Length(ST_LineSubstring(la, pa, ta)::geography) AS len_a,
-                          ST_Length(ST_LineSubstring(lb, tb, pb)::geography) AS len_b
-              FROM c WHERE pa < ta AND tb < pb
-            ), s2 AS (
-              SELECT * FROM s WHERE len_a >= 300 AND len_b >= 300   -- naik angkot < 300 m mending jalan kaki
+              SELECT ra.rute_id, ra.kode_trayek, ra.arah, ra.nama_trayek, ra.g, ra.pa, rb.pb, ra.da, rb.db,
+                     (rb.pb - ra.pa) * ra.len AS len,
+                     (ra.da + rb.db) / $JALAN + (rb.pb - ra.pa) * ra.len / $ANGKOT + $TUNGGU AS menit
+              FROM ra JOIN rb ON rb.rute_id = ra.rute_id AND ra.pa < rb.pb
             ), best AS (
-              SELECT DISTINCT ON (ka, kb) * FROM s2 ORDER BY ka, kb, da + db + 0.2 * (len_a + len_b)
+              SELECT DISTINCT ON (kode_trayek) * FROM c ORDER BY kode_trayek, menit
             )
-            SELECT ka AS kode_1, arah_a AS arah_1, kb AS kode_2, arah_b AS arah_2,
-                   ROUND(da) AS jalan_ke_naik_m, ROUND(db) AS jalan_dari_turun_m,
-                   ROUND(len_a) AS jarak_angkot_1_m, ROUND(len_b) AS jarak_angkot_2_m,
-                   ST_AsGeoJSON(tg, 6) AS titik_transfer,
-                   ST_AsGeoJSON(ST_LineSubstring(la, pa, ta), 6) AS segmen_1,
-                   ST_AsGeoJSON(ST_LineSubstring(lb, tb, pb), 6) AS segmen_2,
+            SELECT best.rute_id, best.kode_trayek, best.arah, best.nama_trayek,
+                   ROUND(da) AS jalan_ke_naik_m, ROUND(db) AS jalan_dari_turun_m, ROUND(len) AS jarak_angkot_m,
+                   ROUND(menit) AS menit,
+                   ST_AsGeoJSON(ST_Transform(ST_LineSubstring(g, pa, pb), 4326), 6) AS segmen,
+                   t.tarif
+            FROM best LEFT JOIN naik.tarif_rute t ON t.kode_trayek = best.kode_trayek
+            ORDER BY best.menit
+            LIMIT 5", $params);
+
+        // ---- 2 angkot: pindah di titik_transfer (posisinya di tiap rute sudah dihitung di mv_transfer_rute) ----
+        $transfer = DB::select("
+            WITH $base,
+            ta AS (   -- titik pindah yang dilewati SETELAH naik di rute pertama
+              SELECT ra.*, x.transfer_id, x.f AS fa, x.d AS dxa
+              FROM ra JOIN naik.mv_transfer_rute x ON x.rute_id = ra.rute_id AND x.f > ra.pa
+              WHERE NOT EXISTS (SELECT 1 FROM rb WHERE rb.rute_id = ra.rute_id AND rb.pb > ra.pa)  -- 1 angkot cukup
+            ), tb AS ( -- titik pindah yang dilewati SEBELUM turun di rute kedua
+              SELECT rb.*, y.transfer_id, y.f AS fb, y.d AS dyb
+              FROM rb JOIN naik.mv_transfer_rute y ON y.rute_id = rb.rute_id AND y.f < rb.pb
+            ), c AS (
+              SELECT ta.kode_trayek AS ka, ta.arah AS arah_1, ta.g AS ga, ta.pa, ta.fa, ta.da,
+                     tb.kode_trayek AS kb, tb.arah AS arah_2, tb.g AS gb, tb.fb, tb.pb, tb.db,
+                     ta.transfer_id, ta.dxa + tb.dyb AS dt,
+                     (ta.fa - ta.pa) * ta.len AS len_a, (tb.pb - tb.fb) * tb.len AS len_b
+              FROM ta JOIN tb ON tb.transfer_id = ta.transfer_id AND tb.kode_trayek <> ta.kode_trayek
+            ), s AS (
+              SELECT *, (da + db + dt) / $JALAN + (len_a + len_b) / $ANGKOT + 2 * $TUNGGU AS menit
+              FROM c WHERE len_a >= 300 AND len_b >= 300   -- naik angkot < 300 m mending jalan kaki
+            ), best AS (
+              SELECT DISTINCT ON (ka, kb) * FROM s ORDER BY ka, kb, menit
+            )
+            SELECT ka AS kode_1, arah_1, kb AS kode_2, arah_2,
+                   ROUND(da) AS jalan_ke_naik_m, ROUND(db) AS jalan_dari_turun_m, ROUND(dt) AS jalan_pindah_m,
+                   ROUND(len_a) AS jarak_angkot_1_m, ROUND(len_b) AS jarak_angkot_2_m, ROUND(menit) AS menit,
+                   ST_AsGeoJSON(tt.geom, 6) AS titik_transfer,
+                   ST_AsGeoJSON(ST_Transform(ST_LineSubstring(ga, pa, fa), 4326), 6) AS segmen_1,
+                   ST_AsGeoJSON(ST_Transform(ST_LineSubstring(gb, fb, pb), 4326), 6) AS segmen_2,
                    COALESCE(t1.tarif, 0) + COALESCE(t2.tarif, 0) AS tarif
             FROM best
+            JOIN naik.titik_transfer tt ON tt.transfer_id = best.transfer_id
             LEFT JOIN naik.tarif_rute t1 ON t1.kode_trayek = ka
             LEFT JOIN naik.tarif_rute t2 ON t2.kode_trayek = kb
-            ORDER BY da + db + 0.2 * (len_a + len_b) + 300   -- penalti 300 m per transfer
+            ORDER BY menit
             LIMIT 5", $params);
 
         foreach (array_merge($langsung, $transfer) as $o) {
@@ -318,20 +368,32 @@ class TrayekController extends Controller
                 }
             }
             $o->tarif = $o->tarif !== null ? (int) $o->tarif : null;
-            foreach (['jalan_ke_naik_m', 'jalan_dari_turun_m', 'jarak_angkot_m', 'jarak_angkot_1_m', 'jarak_angkot_2_m'] as $f) {
+            foreach (['jalan_ke_naik_m', 'jalan_dari_turun_m', 'jalan_pindah_m', 'jarak_angkot_m',
+                      'jarak_angkot_1_m', 'jarak_angkot_2_m', 'menit'] as $f) {
                 if (isset($o->$f)) {
                     $o->$f = (int) $o->$f;
                 }
             }
         }
 
+        // kalau sudah ada angkot langsung, opsi pindah hanya ditampilkan bila waktunya bersaing (selisih <= 5 menit)
+        if ($langsung) {
+            $tercepat = min(array_map(fn ($o) => $o->menit, $langsung));
+            $transfer = array_values(array_filter($transfer, fn ($o) => $o->menit <= $tercepat + 5));
+        }
+
+        $lurus = DB::selectOne("SELECT ROUND(ST_Distance(ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+                                                         ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)) AS m",
+            [$a[1], $a[0], $b[1], $b[0]]);
+
         return response()->json([
             'asal' => ['lat' => $a[0], 'lon' => $a[1]],
             'tujuan' => ['lat' => $b[0], 'lon' => $b[1]],
             'radius_jalan_kaki_m' => $rad,
+            'jarak_lurus_m' => (int) $lurus->m,
             'langsung' => $langsung,
             'transfer' => $transfer,
-            'catatan' => 'Tarif asumsi flat per angkot; jarak jalan kaki = jarak garis lurus ke jalur.',
+            'catatan' => 'Urut dari perkiraan waktu: jalan kaki 4,5 km/jam, angkot 15 km/jam, tunggu 5 menit per angkot. Tarif flat per angkot.',
         ]);
     }
 }

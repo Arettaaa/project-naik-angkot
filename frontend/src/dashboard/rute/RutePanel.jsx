@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMap } from 'react-leaflet'
 import { api } from '../../api/naik'
@@ -6,7 +6,7 @@ import useApi from '../../hooks/useApi'
 import { useDashboard } from '../context'
 import { Floating } from '../ui'
 import { IconRoute } from '../icons'
-import { batas, layarBesar, nomor, titikTengah } from '../lib'
+import { batas, layarBesar, nomor } from '../lib'
 import RutePopup from '../components/RutePopup'
 import DaftarRute from './DaftarRute'
 import DetailRute from './DetailRute'
@@ -63,14 +63,23 @@ export default function RutePanel() {
     if (kodePenuh && !layarBesar()) setDaftarBuka(false) // di HP daftar ditutup supaya peta kelihatan
   }, [kodePenuh, search])
 
-  // zoom ke rute terpilih (+ popup di layar besar)
-  useEffect(() => {
-    if (!dipilih) return setPopup(null)
+  // zoom ke rute terpilih. Popup tidak dibuka otomatis: info yang sama sudah ada di panel Detail Rute,
+  // popup cuma muncul kalau garis rute diklik.
+  const paskan = useCallback(() => {
+    if (!dipilih) return
     const b = batas(dipilih)
     if (b.isValid())
-      map.fitBounds(b, layarBesar() ? { paddingTopLeft: [440, 40], paddingBottomRight: [420, 120] } : { paddingTopLeft: [20, 80], paddingBottomRight: [20, Math.round(window.innerHeight * 0.55)] })
-    setPopup({ posisi: titikTengah(dipilih), props: dipilih.properties })
+      map.flyToBounds(
+        b,
+        layarBesar()
+          ? { paddingTopLeft: [440, 40], paddingBottomRight: [420, 60], duration: 0.6 }
+          : { paddingTopLeft: [20, 80], paddingBottomRight: [20, Math.round(window.innerHeight * 0.52)], duration: 0.6 },
+      )
   }, [dipilih, map])
+  useEffect(() => {
+    setPopup(null)
+    paskan()
+  }, [paskan])
 
   function bukaDetail(p) {
     if (p.kode_trayek === kodePenuh) {
@@ -108,17 +117,24 @@ export default function RutePanel() {
           onBalik={() => setRuteId(lainnya[0].properties.rute_id)}
           onClose={() => setDetailBuka(false)}
           simulasiAktif={simulasiAktif}
-          onMulaiSimulasi={() => setSimulasiAktif(true)}
+          onMulaiSimulasi={() => {
+            setPopup(null)
+            setSimulasiAktif(true)
+            if (!layarBesar()) setDetailBuka(false) // HP: panel detail menutupi angkot yang diikuti kamera
+          }}
+          onHentikanSimulasi={() => {
+            setSimulasiAktif(false)
+            paskan()
+          }}
           onPilihTitik={(idx) => setTitikAktif({ idx, n: Date.now() })}
           onTampilkan={() => {
-            const b = batas(dipilih)
-            if (b.isValid()) map.flyToBounds(b, { padding: [60, 60] })
-            setPopup({ posisi: titikTengah(dipilih), props: dipilih.properties })
+            setSimulasiAktif(false)
+            paskan()
           }}
         />
       )}
 
-      {dipilih && <ChipRute rute={dipilih.properties} />}
+      {dipilih && !simulasiAktif && <ChipRute rute={dipilih.properties} />}
 
       <LayerRuteTerpilih
         semua={!kodePenuh ? rute.data : null}
@@ -129,11 +145,35 @@ export default function RutePanel() {
         titikAktif={titikAktif}
         onKlik={(posisi, props) => setPopup({ posisi, props })}
         simulasiAktif={simulasiAktif}
-        onMulaiSimulasi={() => setSimulasiAktif(true)}
-        onSelesaiSimulasi={() => setSimulasiAktif(false)}
+        onMulaiSimulasi={() => {
+          setPopup(null)
+          setSimulasiAktif(true)
+        }}
+        onSelesaiSimulasi={() => {
+          setSimulasiAktif(false)
+          setDetailBuka(true)
+          paskan()
+        }}
       />
 
-      <RutePopup posisi={popup?.posisi} rute={popup?.props} onClose={() => setPopup(null)} onDetail={() => bukaDetail(popup.props)} />
+      <RutePopup
+        posisi={popup?.posisi}
+        rute={popup?.props}
+        onClose={() => setPopup(null)}
+        onDetail={() => {
+          bukaDetail(popup.props)
+          setPopup(null)
+        }}
+        onSimulasi={
+          popup?.props.kode_trayek === kodePenuh
+            ? () => {
+                setRuteId(popup.props.rute_id)
+                setPopup(null)
+                setSimulasiAktif(true)
+              }
+            : undefined
+        }
+      />
     </>
   )
 }
