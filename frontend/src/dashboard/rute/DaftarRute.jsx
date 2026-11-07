@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Card, CardHeader, Muat, Select } from '../ui'
 import { IconSearch, IconSliders } from '../icons'
 import { nomor, uniq } from '../lib'
-import { teksCariWarga } from '../nomorWarga'
+import { teksCariWarga, trayekLama } from '../nomorWarga'
 import KartuRute from './KartuRute'
 
 // Panel Daftar Rute Angkot: pencarian, filter asal/tujuan, daftar kartu.
@@ -65,7 +65,18 @@ export default function DaftarRute({ trayek, kodeAktif, onPilih, onClose, onRetr
       </div>
       <Muat loading={trayek.loading} error={trayek.error} onRetry={onRetry} />
       <ul className="naik-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 pb-8 sm:px-5 lg:px-6">
-        {daftar.map((t) => (
+        {daftar.filter((t) => !trayekLama(t.kode_trayek)).map((t) => (
+          <li key={t.kode_trayek}>
+            <KartuRute trayek={t} aktif={t.kode_trayek === kodeAktif} onClick={() => onPilih(t)} />
+          </li>
+        ))}
+        {daftar.some((t) => trayekLama(t.kode_trayek)) && (
+          <li className="px-1 pt-4 pb-0.5">
+            <p className="text-[13px] font-bold text-dark">Trayek lama</p>
+            <p className="mt-0.5 text-[12px] leading-snug text-dark/55">Di luar SK 2017, tapi masih beroperasi (Moovit & keterangan warga).</p>
+          </li>
+        )}
+        {daftar.filter((t) => trayekLama(t.kode_trayek)).map((t) => (
           <li key={t.kode_trayek}>
             <KartuRute trayek={t} aktif={t.kode_trayek === kodeAktif} onClick={() => onPilih(t)} />
           </li>

@@ -1,0 +1,2 @@
+# file patch dari Claude: cukup di-git am, jangan di-commit
+*.patch

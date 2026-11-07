@@ -21,7 +21,7 @@ export default function KartuRute({ trayek, aktif, onClick }) {
         </span>
         <span className="flex items-center gap-1.5 text-[13px] text-dark/60">
           Tarif: {rupiah(trayek.tarif)}
-          <PilWarga kode={trayek.kode_trayek} />
+          <PilWarga kode={trayek.kode_trayek} lama={false} />
         </span>
       </span>
       <IconChevronRight className="h-5 w-5 shrink-0 text-dark/40" />

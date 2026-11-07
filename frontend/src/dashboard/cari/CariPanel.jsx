@@ -10,7 +10,7 @@ import { tempatSaya, useLayarBesar, useTempatSaya } from '../hooks'
 import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
 import { useDashboard } from '../context'
 import { Card, CardHeader, Floating, KodeBadge as Badge, PilWarga } from '../ui'
-import { nomorLengkap } from '../nomorWarga'
+import { nomorLengkap, nomorTampil, nomorWarga } from '../nomorWarga'
 import {
   IconArrowLeft, IconBus, IconCap, IconChevronRight, IconHome, IconList, IconMap, IconPlay, IconSearch, IconSwap, IconTransfer, IconWalk,
 } from '../icons'
@@ -502,20 +502,23 @@ function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
                   <KartuOpsi key={kode.join('-')} aktif={aktif} onClick={() => onPilihOpsi({ jenis, i })}>
                     <div className="flex items-center gap-1.5">
                       {kode.map((k, j) => (
-                        <span key={k} className="flex items-center gap-1.5">
+                        <span key={k} className="flex shrink-0 items-center gap-1.5">
                           {j > 0 && <IconTransfer className="h-3.5 w-3.5 text-dark/35" />}
                           <KodeBadge kode={k} warna={warna[k]} />
                         </span>
                       ))}
-                      <span className="ml-1 min-w-0 flex-1 truncate text-[13px] font-semibold text-dark">
-                        {transfer ? `ke ${o.arah_2}` : o.arah}
+                      <span className="min-w-0 flex-1" />
+                      <span className="shrink-0 font-display text-[17px] leading-none font-bold whitespace-nowrap text-dark">
+                        {menitOpsi(o)}
+                        <span className="ml-0.5 text-[12px] font-semibold text-dark/55">mnt</span>
                       </span>
-                      {kode.map((k) => (
-                        <PilWarga key={k} kode={k} />
-                      ))}
-                      <span className="font-display text-[15px] font-bold text-dark">{menitOpsi(o)} mnt</span>
                     </div>
-                    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-dark/55">
+                    <p className="mt-2 truncate text-[13px] font-semibold text-dark">
+                      {transfer
+                        ? `Oper ke ${nomorTampil(o.kode_2)} arah ${String(o.arah_2).replace(/^ke /, '')}`
+                        : `Arah ${String(o.arah).replace(/^ke /, '')}`}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2.5 text-[11.5px] text-dark/55">
                       <span className="inline-flex items-center gap-1">
                         <IconWalk className="h-3.5 w-3.5" />
                         {jarak(jalan)}
@@ -525,6 +528,14 @@ function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
                         {jarak(angkot)}
                       </span>
                       <span>{rupiah(o.tarif)}</span>
+                      {kode.some((k) => nomorWarga(k)) && (
+                        <span
+                          title="Nomor yang masih dipakai warga & Moovit"
+                          className="rounded-full bg-[#FFF3D6] px-1.5 py-px text-[10.5px] font-semibold whitespace-nowrap text-[#8A5A00]"
+                        >
+                          warga: {kode.map((k) => nomorWarga(k) ?? nomorTampil(k)).join(' → ')}
+                        </span>
+                      )}
                       {tercepat?.jenis === jenis && tercepat.i === i && (
                         <span className="rounded-full bg-primary/10 px-1.5 py-px text-[10.5px] font-bold text-primary">tercepat</span>
                       )}

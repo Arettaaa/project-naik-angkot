@@ -148,7 +148,8 @@ export function KodeBadge({ kode, warna, size = 'md' }) {
 }
 
 // Pil kecil "dulu 05": nomor lama yang masih dipakai warga & Moovit untuk trayek ini.
-export function PilWarga({ kode, className = '' }) {
+export function PilWarga({ kode, lama = true, className = '' }) {
+  if (trayekLama(kode) && !lama) return null
   if (trayekLama(kode))
     return (
       <span
