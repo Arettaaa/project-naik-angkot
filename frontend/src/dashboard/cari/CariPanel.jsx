@@ -4,10 +4,12 @@ import { CircleMarker, GeoJSON, Polyline, Tooltip, useMap, useMapEvents } from '
 import L from 'leaflet'
 import { api } from '../../api/naik'
 import KolomTempat from '../components/KolomTempat'
+import PinPeta from './PinPeta'
+import { tempatSaya, useTempatSaya } from '../hooks'
 import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
 import { useDashboard } from '../context'
 import { Card, CardHeader, Floating, KodeBadge as Badge, PrimaryButton } from '../ui'
-import { IconSearch } from '../icons'
+import { IconCap, IconHome, IconMap, IconSearch } from '../icons'
 
 const KodeBadge = (p) => <Badge size="sm" {...p} />
 
@@ -53,17 +55,23 @@ export default function CariPanel() {
   const [hasil, setHasil] = useState({ data: null, loading: false, error: null })
   const [pilih, setPilih] = useState(null) // {jenis:'langsung'|'transfer', i}
   const [lokasiErr, setLokasiErr] = useState('')
+  const [pin, setPin] = useState(null) // 'asal' | 'tujuan' saat memilih lewat pin geser
 
   // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, coba lokasi saya sebagai asal, lalu cari otomatis
   const [params] = useSearchParams()
   const otomatis = useRef(false)
   useEffect(() => {
     const ke = params.get('ke')?.split(',').map(Number)
-    if (!ke || ke.length !== 2 || ke.some((x) => !Number.isFinite(x))) return
-    setTitik('tujuan', { lat: ke[0], lng: ke[1], nama: params.get('nama') || 'Tujuan' })
-    setMode('asal')
-    otomatis.current = true
-    lokasiSaya()
+    if (ke && ke.length === 2 && ke.every(Number.isFinite)) {
+      setTitik('tujuan', { lat: ke[0], lng: ke[1], nama: params.get('nama') || 'Tujuan', ket: params.get('ket') })
+      setMode('asal')
+      otomatis.current = true
+      lokasiSaya()
+      return
+    }
+    if (params.get('pin') === 'tujuan' || params.get('pin') === 'asal') setPin(params.get('pin'))
+    // asal otomatis = lokasi saya (diam-diam; kalau ditolak, pengguna isi sendiri)
+    if (!asal) lokasiSaya({ diam: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
   useEffect(() => {
@@ -81,21 +89,41 @@ export default function CariPanel() {
     setPilih(null)
   }
 
+  // isi nama & alamat titik dari server (reverse geocoding), hanya kalau titiknya belum diganti
+  function isiAlamat(jenis, t, ganti = true) {
+    api
+      .alamat(t.lat, t.lng)
+      .then((a) => {
+        const set = jenis === 'asal' ? setAsal : setTujuan
+        set((cur) => (cur && cur.lat === t.lat && cur.lng === t.lng ? { ...cur, nama: ganti ? a.nama : cur.nama, ket: a.ket } : cur))
+      })
+      .catch(() => {})
+  }
+
   function klikPeta(latlng) {
-    const t = { lat: +latlng.lat.toFixed(6), lng: +latlng.lng.toFixed(6), nama: 'Titik di peta' }
+    const t = { lat: +latlng.lat.toFixed(6), lng: +latlng.lng.toFixed(6), nama: 'Memuat alamat…' }
     setTitik(mode, t)
+    isiAlamat(mode, t)
     if (mode === 'asal' && !tujuan) setMode('tujuan')
   }
 
-  function lokasiSaya() {
+  function pilihTempat(jenis, t) {
+    setTitik(jenis, t)
+    tempatSaya.tambahRiwayat(t)
+    if (jenis === 'asal' && !tujuan) setMode('tujuan')
+  }
+
+  function lokasiSaya({ diam = false } = {}) {
     setLokasiErr('')
-    if (!navigator.geolocation) return setLokasiErr('Browser tidak mendukung lokasi.')
+    if (!navigator.geolocation) return !diam && setLokasiErr('Browser tidak mendukung lokasi.')
     navigator.geolocation.getCurrentPosition(
       (p) => {
-        setTitik('asal', { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), nama: 'Lokasi saya' })
+        const t = { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), nama: 'Lokasi saya' }
+        setTitik('asal', t)
+        isiAlamat('asal', t, false)
         setMode('tujuan')
       },
-      () => setLokasiErr('Izin lokasi ditolak / tidak tersedia.'),
+      () => !diam && setLokasiErr('Izin lokasi ditolak / tidak tersedia. Ketik atau pilih lewat peta ya.'),
       { enableHighAccuracy: true, timeout: 10000 },
     )
   }
@@ -129,19 +157,14 @@ export default function CariPanel() {
       <div className="px-5 pt-4 pb-5 lg:px-6">
         <TitikInput
           label="Dari"
+          slot="asal"
           warna={WARNA_ASAL}
           titik={asal}
           aktif={mode === 'asal'}
           onAktif={() => setMode('asal')}
-          onPilih={(t) => {
-            setTitik('asal', t)
-            if (!tujuan) setMode('tujuan')
-          }}
-          extra={
-            <button onClick={lokasiSaya} className="text-xs font-semibold text-primary hover:underline">
-              Pakai lokasi saya
-            </button>
-          }
+          onPilih={(t) => pilihTempat('asal', t)}
+          onLokasiSaya={() => lokasiSaya()}
+          onPilihPeta={() => setPin('asal')}
         />
         <div className="my-2 flex justify-center">
           <button
@@ -155,11 +178,13 @@ export default function CariPanel() {
         </div>
         <TitikInput
           label="Ke"
+          slot="tujuan"
           warna={WARNA_TUJUAN}
           titik={tujuan}
           aktif={mode === 'tujuan'}
           onAktif={() => setMode('tujuan')}
-          onPilih={(t) => setTitik('tujuan', t)}
+          onPilih={(t) => pilihTempat('tujuan', t)}
+          onPilihPeta={() => setPin('tujuan')}
         />
         {lokasiErr && <p className="mt-2 text-xs text-red-700">{lokasiErr}</p>}
 
@@ -181,7 +206,7 @@ export default function CariPanel() {
         </PrimaryButton>
         {(!asal || !tujuan) && (
           <p className="mt-2 text-center text-xs text-dark/50">
-            Ketik nama tempat, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
+            Ketik nama tempat, pilih lewat peta, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
           </p>
         )}
       </div>
@@ -199,6 +224,26 @@ export default function CariPanel() {
   const titikFit = opsi
     ? [asal, tujuan].map((t) => [t.lat, t.lng]).concat(garisOpsi(opsi).flat())
     : [asal, tujuan].filter(Boolean).map((t) => [t.lat, t.lng])
+
+  if (pin) {
+    const awal = (pin === 'asal' ? asal : tujuan) ?? (pin === 'tujuan' ? asal : tujuan)
+    return (
+      <>
+        {pin !== 'asal' && asal && <Penanda titik={asal} warna={WARNA_ASAL} label="Asal" />}
+        {pin !== 'tujuan' && tujuan && <Penanda titik={tujuan} warna={WARNA_TUJUAN} label="Tujuan" />}
+        <PinPeta
+          label={pin}
+          warna={pin === 'asal' ? WARNA_ASAL : WARNA_TUJUAN}
+          awal={awal}
+          onBatal={() => setPin(null)}
+          onPilih={(t) => {
+            pilihTempat(pin, t)
+            setPin(null)
+          }}
+        />
+      </>
+    )
+  }
 
   return (
     <>
@@ -221,7 +266,14 @@ export default function CariPanel() {
 
 }
 
-function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, extra }) {
+const SLOT_SIMPAN = [
+  { key: 'rumah', label: 'Rumah', Ikon: IconHome },
+  { key: 'kampus', label: 'Kampus', Ikon: IconCap },
+]
+
+function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, onLokasiSaya, onPilihPeta }) {
+  const saya = useTempatSaya()
+  const bisaSimpan = titik && titik.nama !== 'Memuat alamat…'
   return (
     <div className={`rounded-xl border p-3 transition ${aktif ? 'border-primary ring-2 ring-primary/15' : 'border-border-nav'}`}>
       <div className="mb-2 flex items-center justify-between">
@@ -229,12 +281,36 @@ function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, extra }) {
           <span className="h-3 w-3 rounded-full" style={{ backgroundColor: warna }} />
           {label}
         </span>
-        {extra}
+        <button onClick={onPilihPeta} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+          <IconMap className="h-3.5 w-3.5" /> Pilih lewat peta
+        </button>
       </div>
-      <KolomTempat titik={titik} onPilih={onPilih} onFocus={onAktif} placeholder={label === 'Dari' ? 'Dari mana? (ketik / klik peta)' : 'Mau ke mana? (ketik / klik peta)'} />
-      <button onClick={onAktif} className={`mt-2 text-xs font-semibold ${aktif ? 'text-primary' : 'text-dark/60 hover:text-primary'}`}>
-        {aktif ? '● Klik peta untuk memilih titik' : 'Pilih di peta'}
-      </button>
+      <KolomTempat
+        titik={titik}
+        onPilih={onPilih}
+        onFocus={onAktif}
+        onLokasiSaya={onLokasiSaya}
+        onPilihPeta={onPilihPeta}
+        placeholder={label === 'Dari' ? 'Dari mana?' : 'Mau ke mana?'}
+      />
+      {bisaSimpan && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11.5px] text-dark/45">Simpan sebagai</span>
+          {SLOT_SIMPAN.map(({ key, label: l, Ikon }) => {
+            const tersimpan = tempatSaya.sama(saya[key], titik)
+            return (
+              <button
+                key={key}
+                onClick={() => tempatSaya.atur(key, tersimpan ? null : titik)}
+                aria-pressed={tersimpan}
+                className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold transition ${tersimpan ? 'bg-primary text-white' : 'bg-[#F1F4F5] text-dark/65 hover:bg-mist'}`}
+              >
+                <Ikon className="h-3.5 w-3.5" /> {l}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

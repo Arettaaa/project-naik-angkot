@@ -5,8 +5,7 @@ import L from 'leaflet'
 import { useDashboard } from '../context'
 import { BottomSheet, Card, Floating } from '../ui'
 import { useLayarBesar } from '../hooks'
-import { IconChevronDown, IconChevronUp, IconLocate, IconX } from '../icons'
-import { KEPADATAN } from '../warna'
+import { IconChevronDown, IconChevronUp, IconLocate } from '../icons'
 import { batas, nomor } from '../lib'
 import RutePopup from '../components/RutePopup'
 import RuasPopup from '../components/RuasPopup'
@@ -35,10 +34,15 @@ export default function BerandaPanel() {
   const toggle = (kode) => setFilter((f) => ({ ...f, kode: f.kode.includes(kode) ? f.kode.filter((k) => k !== kode) : [...f.kode, kode] }))
   const hapus = () => setFilter((f) => ({ ...f, kode: [] }))
   const pilihSemua = () => setFilter((f) => ({ ...f, kode: (trayek.data ?? []).map((t) => t.kode_trayek) }))
-  const [infoTutup, setInfoTutup] = useState(false) // desktop: panel info kepadatan ditutup
+  const [infoTutup, setInfoTutup] = useState(false) // desktop: panel info kepadatan diciutkan
 
   useEffect(() => {
-    if (layers.jalan || layers.kepadatan) butuhKepadatan()
+    if (layers.jalan || layers.kepadatan) return butuhKepadatan()
+    // muat data kepadatan diam-diam saat browser senggang, jadi saat pindah ke Kepadatan sudah siap
+    const idle = window.requestIdleCallback ?? ((f) => setTimeout(f, 1500))
+    const batal = window.cancelIdleCallback ?? clearTimeout
+    const id = idle(() => butuhKepadatan())
+    return () => batal(id)
   }, [layers.jalan, layers.kepadatan, butuhKepadatan])
 
   const ruteTampil = useMemo(() => {
@@ -108,35 +112,21 @@ export default function BerandaPanel() {
             </Card>
           </Floating>
           <Floating className="top-3 right-3">{tombolLayer}</Floating>
-          {layers.kepadatan &&
-            (infoTutup ? (
-              <Floating className="top-[76px] right-3">
+          {layers.kepadatan && (
+            <Floating className="top-[76px] right-3 flex max-h-[calc(100%-292px)] w-[340px] flex-col">
+              <Card className="naik-scroll relative min-h-0 overflow-y-auto !rounded-[24px] px-5 py-4">
                 <button
-                  onClick={() => setInfoTutup(false)}
-                  className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-4 text-[14px] font-semibold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.14)] hover:bg-[#F6F9F9]"
+                  onClick={() => setInfoTutup((x) => !x)}
+                  aria-label={infoTutup ? 'Buka info kepadatan' : 'Ciutkan info kepadatan'}
+                  aria-expanded={!infoTutup}
+                  className="absolute top-3 right-3 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/55 transition hover:bg-mist hover:text-dark"
                 >
-                  <span className="flex gap-0.5">
-                    {KEPADATAN.map((k) => (
-                      <span key={k.key} className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: k.warna }} />
-                    ))}
-                  </span>
-                  Info kepadatan
+                  {infoTutup ? <IconChevronDown className="h-4 w-4" /> : <IconChevronUp className="h-4 w-4" />}
                 </button>
-              </Floating>
-            ) : (
-              <Floating className="top-[76px] right-3 flex max-h-[calc(100%-292px)] w-[340px] flex-col">
-                <Card className="naik-scroll relative min-h-0 overflow-y-auto !rounded-[24px] px-5 py-4">
-                  <button
-                    onClick={() => setInfoTutup(true)}
-                    aria-label="Tutup info kepadatan"
-                    className="absolute top-3 right-3 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/50 transition hover:bg-mist hover:text-dark"
-                  >
-                    <IconX className="h-4 w-4" />
-                  </button>
-                  {info()}
-                </Card>
-              </Floating>
-            ))}
+                {info({ ringkas: infoTutup })}
+              </Card>
+            </Floating>
+          )}
         </>
       ) : (
         <>
