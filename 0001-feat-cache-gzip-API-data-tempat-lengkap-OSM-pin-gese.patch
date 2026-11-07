@@ -1,0 +1,2028 @@
+From 0d274e280d2231db61032dbd998d9135a1d39a37 Mon Sep 17 00:00:00 2001
+From: Akas <akasshapire@gmail.com>
+Date: Sat, 7 Nov 2026 11:22:14 +0700
+Subject: [PATCH] feat: cache+gzip API, data tempat lengkap OSM, pin geser ala
+ ojol, riwayat & tempat tersimpan
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01C3HB5NRrpwX98c8uD43zvS
+---
+ .../Http/Controllers/Api/PoiController.php    | 304 +++++++++-
+ backend/app/Http/Middleware/CacheRespon.php   |  48 ++
+ ...6_11_07_000001_perluas_poi_dan_gazetir.php |  61 ++
+ backend/database/seeders/NaikPoiSeeder.php    | 567 +++++++++++++-----
+ backend/routes/api.php                        |  19 +-
+ frontend/src/api/naik.js                      |   5 +-
+ .../src/dashboard/beranda/BerandaPanel.jsx    |  50 +-
+ frontend/src/dashboard/beranda/CariTujuan.jsx |  67 ++-
+ frontend/src/dashboard/cari/CariPanel.jsx     | 132 +++-
+ frontend/src/dashboard/cari/PinPeta.jsx       | 114 ++++
+ .../src/dashboard/components/KolomTempat.jsx  |  88 ++-
+ frontend/src/dashboard/hooks.js               | 156 ++++-
+ frontend/src/dashboard/icons.jsx              |   4 +
+ 13 files changed, 1317 insertions(+), 298 deletions(-)
+ create mode 100644 backend/app/Http/Middleware/CacheRespon.php
+ create mode 100644 backend/database/migrations/2026_11_07_000001_perluas_poi_dan_gazetir.php
+ create mode 100644 frontend/src/dashboard/cari/PinPeta.jsx
+
+diff --git a/backend/app/Http/Controllers/Api/PoiController.php b/backend/app/Http/Controllers/Api/PoiController.php
+index cd04ab7..0736b54 100644
+--- a/backend/app/Http/Controllers/Api/PoiController.php
++++ b/backend/app/Http/Controllers/Api/PoiController.php
+@@ -6,12 +6,21 @@
+ use Illuminate\Http\JsonResponse;
+ use Illuminate\Http\Request;
+ use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Http;
++use Illuminate\Support\Facades\Log;
+ 
+ class PoiController extends Controller
+ {
++    /** Kota Bogor + pinggiran: minLon, minLat, maxLon, maxLat */
++    private const BBOX = [106.70, -6.70, 106.90, -6.48];
++
++    private const UA = 'NAIK-Angkot/1.0 (WebGIS tugas SIG IPB)';
++
+     /**
+-     * GET /api/poi?q=sekolah&limit=8 — cari tempat (POI) di tabel naik.poi berdasarkan nama atau kategori.
+-     * Dipakai kolom "Mau ke mana hari ini?" dan kolom Dari/Ke di menu Cari.
++     * GET /api/poi?q=sekolah vokasi&lat=-6.59&lng=106.80
++     * Cari tempat, jalan, kelurahan & perumahan. Urutan: paling cocok dulu, lalu paling dekat (lat/lng opsional).
++     * Sumber: naik.poi + naik.gazetir (OSM yang sudah diimpor); kalau hasilnya sedikit, tambah dari Photon / Nominatim.
++     * Hasil: [{nama, ket, jenis, lat, lng, jarak_m, sumber}]
+      */
+     public function cari(Request $req): JsonResponse
+     {
+@@ -20,16 +29,289 @@ public function cari(Request $req): JsonResponse
+             return response()->json([]);
+         }
+         $limit = min(max((int) $req->query('limit', 8), 1), 20);
+-        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $q) . '%';
++        $dekat = $this->titik($req);
++
++        $hasil = $this->dariDatabase($q, $limit, $dekat);
++        if (count($hasil) < 5) {
++            $hasil = array_merge($hasil, $this->urutJarak($this->dariPhoton($q, $dekat), $dekat));
++        }
++        if (count($hasil) < 3) {
++            $hasil = array_merge($hasil, $this->urutJarak($this->dariNominatim($q), $dekat));
++        }
++
++        $lihat = [];
++        $unik = [];
++        foreach ($hasil as $h) {
++            $k = mb_strtolower(trim($h['nama']));
++            if (isset($lihat[$k])) {
++                continue;
++            }
++            $lihat[$k] = true;
++            $unik[] = $h;
++        }
++
++        return response()->json(array_slice($unik, 0, $limit + 2));
++    }
++
++    /**
++     * GET /api/alamat?lat=-6.5885&lng=106.8063 — alamat untuk titik di peta (pin geser ala ojol).
++     * Hasil: {nama, ket, lat, lng}. nama = tempat terdekat (≤ 35 m) atau "Jalan X No. Y".
++     */
++    public function alamat(Request $req): JsonResponse
++    {
++        $p = $this->titik($req);
++        if (!$p) {
++            return response()->json(['message' => 'lat & lng wajib'], 422);
++        }
++        [$lat, $lng] = $p;
++
++        $poi = $this->coba(fn () => DB::selectOne("
++            SELECT nama_tempat AS nama, alamat FROM naik.poi
++            WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 35)
++            ORDER BY bobot DESC, geom <-> ST_SetSRID(ST_MakePoint(?, ?), 4326) LIMIT 1", [$lng, $lat, $lng, $lat]));
++
++        $a = $this->reverseNominatim($lat, $lng) ?? $this->reverseDatabase($lat, $lng);
++        $jalan = trim(($a['jalan'] ?? '') . (!empty($a['nomor']) ? ' No. ' . $a['nomor'] : ''));
++        $wilayah = array_values(array_unique(array_filter([$a['kel'] ?? null, $a['kec'] ?? null])));
++
++        if ($poi) {
++            $nama = $poi->nama;
++            $ket = implode(', ', array_filter([$jalan ?: null, ...$wilayah])) ?: $poi->alamat;
++        } else {
++            $nama = $jalan ?: ($a['nama'] ?? null) ?: ($wilayah[0] ?? 'Titik di peta');
++            $ket = implode(', ', array_filter([...$wilayah, $a['kota'] ?? null], fn ($x) => $x && $x !== $nama));
++        }
++
++        return response()->json(['nama' => $nama, 'ket' => $ket ?: null, 'lat' => $lat, 'lng' => $lng]);
++    }
++
++    // ------------------------------------------------------------------ pencarian
++
++    private function dariDatabase(string $q, int $limit, ?array $dekat): array
++    {
++        // singkatan umum: "jl kumbang" = "jalan kumbang", "gg" = "gang"
++        $singkat = ['jl' => 'jalan', 'jln' => 'jalan', 'gg' => 'gang', 'kel' => 'kelurahan', 'kec' => 'kecamatan'];
++        $token = array_map(fn ($w) => $singkat[$w] ?? $w, preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($q), -1, PREG_SPLIT_NO_EMPTY));
++        $teks = implode(' ', $token);
++        $kata = array_slice(array_values(array_unique(array_filter(
++            $token,
++            fn ($w) => mb_strlen($w) >= 2 || ctype_digit($w)
++        ))), 0, 5);
++        if (!$kata) {
++            return [];
++        }
++        $esc = fn ($s) => str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $s);
++
++        $syarat = implode(' AND ', array_fill(0, count($kata), 'kata_kunci LIKE ?'));
++        $diNama = implode(' AND ', array_fill(0, count($kata), 'lower(nama) LIKE ?'));
++        $pola = array_map(fn ($w) => '%' . $esc($w) . '%', $kata);
++
++        $jarak = $dekat ? 'ST_Distance(titik::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)' : 'NULL::float';
++        $urut = $dekat ? 'jarak_m / (1 + bobot)' : 'bobot DESC, length(nama)';
++
++        $sql = "
++            WITH kandidat AS (
++                SELECT nama_tempat AS nama, alamat AS ket, kategori AS jenis, bobot, geom AS titik FROM naik.poi WHERE $syarat
++                UNION ALL
++                SELECT nama, ket, jenis, bobot, titik FROM naik.gazetir WHERE $syarat
++            )
++            SELECT * FROM (
++                SELECT nama, ket, jenis, bobot, ROUND(ST_Y(titik)::numeric, 6)::float AS lat, ROUND(ST_X(titik)::numeric, 6)::float AS lng,
++                       ROUND($jarak) AS jarak_m,
++                       CASE WHEN lower(nama) = ? THEN 0 WHEN lower(nama) LIKE ? THEN 1 WHEN $diNama THEN 2 ELSE 3 END AS tingkat
++                FROM kandidat
++            ) x
++            ORDER BY tingkat, $urut
++            LIMIT ?";
++
++        $ikat = array_merge($pola, $pola, $dekat ? [$dekat[1], $dekat[0]] : [], [$teks, $esc($teks) . '%'], $pola, [$limit * 2]);
++
++        $rows = $this->coba(fn () => DB::select($sql, $ikat), []);
++        if (!$rows && $this->gazetirBelumAda()) {
++            // database lama (belum migrasi gazetir/kata_kunci): cari nama saja di naik.poi
++            $rows = $this->coba(fn () => DB::select("
++                SELECT nama_tempat AS nama, alamat AS ket, kategori AS jenis,
++                       ROUND(ST_Y(geom)::numeric, 6)::float AS lat, ROUND(ST_X(geom)::numeric, 6)::float AS lng, NULL AS jarak_m
++                FROM naik.poi WHERE nama_tempat ILIKE ? LIMIT ?", ['%' . $esc($q) . '%', $limit]), []);
++        }
++
++        return array_map(fn ($r) => [
++            'nama' => $r->nama,
++            'ket' => $this->ketJenis($r->jenis, $r->ket),
++            'jenis' => $r->jenis,
++            'lat' => (float) $r->lat,
++            'lng' => (float) $r->lng,
++            'jarak_m' => $r->jarak_m !== null ? (int) $r->jarak_m : null,
++            'sumber' => 'naik',
++        ], $rows);
++    }
++
++    /** Teks kecil di bawah nama: alamat untuk tempat; "Jalan · Babakan" untuk jalan; dst. */
++    private function ketJenis(string $jenis, ?string $ket): ?string
++    {
++        $label = ['jalan' => 'Jalan', 'kelurahan' => 'Kelurahan', 'kecamatan' => 'Kecamatan', 'perumahan' => 'Perumahan', 'wilayah' => 'Daerah'][$jenis] ?? null;
++        if (!$label) {
++            return $ket;
++        }
++        return $ket ? "$label · $ket" : $label;
++    }
++
++    private function gazetirBelumAda(): bool
++    {
++        return !$this->coba(fn () => DB::selectOne("SELECT to_regclass('naik.gazetir') IS NOT NULL AS ada")->ada, false);
++    }
++
++    private function dariPhoton(string $q, ?array $dekat): array
++    {
++        try {
++            [$x1, $y1, $x2, $y2] = self::BBOX;
++            $param = ['q' => $q, 'limit' => 8, 'bbox' => "$x1,$y1,$x2,$y2"];
++            if ($dekat) {
++                $param += ['lat' => $dekat[0], 'lon' => $dekat[1]];
++            }
++            $res = Http::timeout(5)->withHeaders(['User-Agent' => self::UA])->get('https://photon.komoot.io/api/', $param);
++            if (!$res->successful()) {
++                return [];
++            }
++            $out = [];
++            foreach ($res->json('features') ?? [] as $f) {
++                $p = $f['properties'] ?? [];
++                if (empty($p['name'])) {
++                    continue;
++                }
++                $ket = array_values(array_unique(array_filter([$p['street'] ?? null, $p['district'] ?? ($p['locality'] ?? null), $p['city'] ?? null])));
++                $out[] = [
++                    'nama' => $p['name'],
++                    'ket' => implode(', ', $ket),
++                    'jenis' => 'osm',
++                    'lat' => round($f['geometry']['coordinates'][1], 6),
++                    'lng' => round($f['geometry']['coordinates'][0], 6),
++                    'sumber' => 'osm',
++                ];
++            }
++            return $out;
++        } catch (\Throwable $e) {
++            Log::warning('Photon: ' . $e->getMessage());
++            return [];
++        }
++    }
++
++    private function dariNominatim(string $q): array
++    {
++        try {
++            [$x1, $y1, $x2, $y2] = self::BBOX;
++            $res = Http::timeout(6)->withHeaders(['User-Agent' => self::UA, 'Accept-Language' => 'id'])->get('https://nominatim.openstreetmap.org/search', [
++                'q' => $q, 'format' => 'jsonv2', 'limit' => 6, 'countrycodes' => 'id',
++                'viewbox' => "$x1,$y2,$x2,$y1", 'bounded' => 1,
++            ]);
++            if (!$res->successful()) {
++                return [];
++            }
++            return array_map(function ($r) {
++                $bagian = explode(', ', $r['display_name'] ?? '');
++                return [
++                    'nama' => $r['name'] ?: ($bagian[0] ?? 'Tempat'),
++                    'ket' => implode(', ', array_slice($bagian, 1, 3)),
++                    'jenis' => 'osm',
++                    'lat' => round((float) $r['lat'], 6),
++                    'lng' => round((float) $r['lon'], 6),
++                    'sumber' => 'osm',
++                ];
++            }, $res->json() ?? []);
++        } catch (\Throwable $e) {
++            Log::warning('Nominatim: ' . $e->getMessage());
++            return [];
++        }
++    }
+ 
+-        $rows = DB::select("
+-            SELECT poi_id, nama_tempat AS nama, kategori, sub_kategori, alamat,
+-                   ROUND(ST_Y(geom)::numeric, 6)::float AS lat, ROUND(ST_X(geom)::numeric, 6)::float AS lng
+-            FROM naik.poi
+-            WHERE nama_tempat ILIKE ? OR kategori ILIKE ? OR sub_kategori ILIKE ?
+-            ORDER BY (nama_tempat ILIKE ?) DESC, length(nama_tempat), nama_tempat
+-            LIMIT ?", [$like, $like, $like, $q . '%', $limit]);
++    // ------------------------------------------------------------------ alamat (reverse geocoding)
++
++    private function reverseNominatim(float $lat, float $lng): ?array
++    {
++        try {
++            $res = Http::timeout(5)->withHeaders(['User-Agent' => self::UA, 'Accept-Language' => 'id'])
++                ->get('https://nominatim.openstreetmap.org/reverse', ['lat' => $lat, 'lon' => $lng, 'format' => 'jsonv2', 'zoom' => 18, 'addressdetails' => 1]);
++            if (!$res->successful() || !$res->json('address')) {
++                return null;
++            }
++            $a = $res->json('address');
++            return [
++                'nama' => $res->json('name') ?: null,
++                'jalan' => $a['road'] ?? ($a['pedestrian'] ?? ($a['footway'] ?? null)),
++                'nomor' => $a['house_number'] ?? null,
++                'kel' => $a['village'] ?? ($a['suburb'] ?? ($a['quarter'] ?? ($a['neighbourhood'] ?? ($a['hamlet'] ?? null)))),
++                'kec' => $a['city_district'] ?? ($a['district'] ?? null),
++                'kota' => $a['city'] ?? ($a['town'] ?? ($a['county'] ?? null)),
++            ];
++        } catch (\Throwable $e) {
++            Log::warning('Nominatim reverse: ' . $e->getMessage());
++            return null;
++        }
++    }
++
++    /** Cadangan tanpa internet: jalan terdekat (≤ 150 m) + kelurahan/kecamatan dari naik.gazetir. */
++    private function reverseDatabase(float $lat, float $lng): array
++    {
++        $pt = 'ST_SetSRID(ST_MakePoint(?, ?), 4326)';
++        $jalan = $this->coba(fn () => DB::selectOne("
++            SELECT nama FROM naik.gazetir WHERE jenis = 'jalan' AND ST_DWithin(geom::geography, $pt::geography, 150)
++            ORDER BY geom <-> $pt LIMIT 1", [$lng, $lat, $lng, $lat])?->nama);
++        $kel = $this->coba(fn () => DB::selectOne("
++            SELECT nama FROM naik.gazetir WHERE jenis = 'kelurahan' AND ST_Contains(geom, $pt) LIMIT 1", [$lng, $lat])?->nama)
++            ?? $this->coba(fn () => DB::selectOne("
++            SELECT nama FROM naik.gazetir WHERE jenis IN ('kelurahan', 'wilayah') AND ST_DWithin(titik, $pt, 0.02)
++            ORDER BY titik <-> $pt LIMIT 1", [$lng, $lat, $lng, $lat])?->nama);
++        $kec = $this->coba(fn () => DB::selectOne("
++            SELECT nama FROM naik.gazetir WHERE jenis = 'kecamatan' AND ST_Contains(geom, $pt) LIMIT 1", [$lng, $lat])?->nama);
+ 
+-        return response()->json($rows);
++        return ['jalan' => $jalan, 'kel' => $kel, 'kec' => $kec, 'kota' => 'Bogor'];
++    }
++
++    // ------------------------------------------------------------------ bantuan
++
++    /** [lat, lng] dari query string, atau null kalau tidak ada / tidak valid. */
++    private function titik(Request $req): ?array
++    {
++        $lat = $req->query('lat');
++        $lng = $req->query('lng');
++        if (!is_numeric($lat) || !is_numeric($lng)) {
++            return null;
++        }
++        $lat = (float) $lat;
++        $lng = (float) $lng;
++        return ($lat >= -90 && $lat <= 90 && $lng >= -180 && $lng <= 180) ? [$lat, $lng] : null;
++    }
++
++    private function urutJarak(array $list, ?array $dekat): array
++    {
++        if (!$dekat) {
++            return $list;
++        }
++        foreach ($list as &$h) {
++            $h['jarak_m'] = (int) round($this->haversine($dekat[0], $dekat[1], $h['lat'], $h['lng']));
++        }
++        unset($h);
++        usort($list, fn ($a, $b) => $a['jarak_m'] <=> $b['jarak_m']);
++        return $list;
++    }
++
++    private function haversine(float $lat1, float $lon1, float $lat2, float $lon2): float
++    {
++        $r = 6371000;
++        $dLat = deg2rad($lat2 - $lat1);
++        $dLon = deg2rad($lon2 - $lon1);
++        $a = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) ** 2;
++        return 2 * $r * asin(min(1, sqrt($a)));
++    }
++
++    /** Jalankan query; kalau gagal (mis. tabel belum dimigrasi) kembalikan $default dan catat di log. */
++    private function coba(callable $f, $default = null)
++    {
++        try {
++            return $f();
++        } catch (\Throwable $e) {
++            Log::warning('PoiController: ' . $e->getMessage());
++            return $default;
++        }
+     }
+ }
+diff --git a/backend/app/Http/Middleware/CacheRespon.php b/backend/app/Http/Middleware/CacheRespon.php
+new file mode 100644
+index 0000000..807ccfd
+--- /dev/null
++++ b/backend/app/Http/Middleware/CacheRespon.php
+@@ -0,0 +1,48 @@
++<?php
++
++namespace App\Http\Middleware;
++
++use Closure;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\Cache;
++use Symfony\Component\HttpFoundation\Response;
++
++/**
++ * Simpan respon GET JSON di cache file (data trayek & kepadatan statis, query PostGIS-nya berat),
++ * lalu kirim terkompresi gzip kalau browser mendukung (GeoJSON kepadatan ±3 MB -> ±0,4 MB).
++ * Setelah data di database diperbarui: php artisan cache:clear file
++ */
++class CacheRespon
++{
++    public function handle(Request $request, Closure $next, string $menit = '1440'): Response
++    {
++        if (!$request->isMethod('GET')) {
++            return $next($request);
++        }
++
++        $store = Cache::store('file');
++        $key = 'naik:' . sha1($request->fullUrl());
++        $isi = $store->get($key);
++        $status = 'HIT';
++
++        if ($isi === null) {
++            $res = $next($request);
++            if ($res->getStatusCode() !== 200 || !str_contains((string) $res->headers->get('Content-Type'), 'json')) {
++                return $res;
++            }
++            $isi = $res->getContent();
++            if ($isi !== '[]') { // hasil kosong tidak disimpan (mis. sumber sedang gagal), biar dicoba lagi
++                $store->put($key, $isi, now()->addMinutes((int) $menit));
++            }
++            $status = 'MISS';
++        }
++
++        $headers = ['Content-Type' => 'application/json', 'X-Naik-Cache' => $status, 'Vary' => 'Accept-Encoding'];
++        if (strlen($isi) > 20000 && str_contains((string) $request->header('Accept-Encoding'), 'gzip') && function_exists('gzencode')) {
++            $isi = gzencode($isi, 6);
++            $headers['Content-Encoding'] = 'gzip';
++        }
++
++        return response($isi, 200, $headers);
++    }
++}
+diff --git a/backend/database/migrations/2026_11_07_000001_perluas_poi_dan_gazetir.php b/backend/database/migrations/2026_11_07_000001_perluas_poi_dan_gazetir.php
+new file mode 100644
+index 0000000..61b555a
+--- /dev/null
++++ b/backend/database/migrations/2026_11_07_000001_perluas_poi_dan_gazetir.php
+@@ -0,0 +1,61 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Support\Facades\DB;
++
++/**
++ * Data tempat lengkap untuk pencarian ala aplikasi ojol:
++ * - naik.poi diperluas: osm_ref (n123/w456/r789, karena id node/way/relation bisa bentrok), kata_kunci, bobot
++ * - naik.gazetir (baru): nama jalan, kelurahan/kecamatan, perumahan — untuk pencarian & alamat (reverse geocoding)
++ */
++return new class extends Migration
++{
++    // tanpa transaksi: kalau CREATE EXTENSION pg_trgm ditolak, langkah lain tetap tersimpan
++    public $withinTransaction = false;
++
++    public function up(): void
++    {
++        DB::statement('ALTER TABLE naik.poi DROP CONSTRAINT IF EXISTS poi_osm_id_key');
++        DB::statement('ALTER TABLE naik.poi ADD COLUMN IF NOT EXISTS osm_ref VARCHAR(20)');
++        DB::statement('ALTER TABLE naik.poi ADD COLUMN IF NOT EXISTS kata_kunci TEXT');
++        DB::statement('ALTER TABLE naik.poi ADD COLUMN IF NOT EXISTS bobot SMALLINT NOT NULL DEFAULT 1');
++        DB::statement("UPDATE naik.poi SET osm_ref = 'n' || osm_id WHERE osm_ref IS NULL AND osm_id IS NOT NULL");
++        // baris kurasi lama tanpa kunci akan diisi ulang seeder (kuncinya kurasi1, kurasi2, …) -> hapus supaya tidak dobel
++        DB::statement("DELETE FROM naik.poi WHERE osm_ref IS NULL AND sumber_data = 'Kurasi Lokal'");
++        DB::statement('CREATE UNIQUE INDEX IF NOT EXISTS uq_poi_osm_ref ON naik.poi (osm_ref)');
++        DB::statement("UPDATE naik.poi SET kata_kunci = lower(concat_ws(' ', nama_tempat, kategori, alamat)) WHERE kata_kunci IS NULL");
++
++        DB::statement("
++            CREATE TABLE IF NOT EXISTS naik.gazetir (
++                gazetir_id  BIGSERIAL PRIMARY KEY,
++                osm_ref     VARCHAR(40) UNIQUE,
++                nama        VARCHAR(255) NOT NULL,
++                jenis       VARCHAR(20) NOT NULL,      -- jalan | kelurahan | kecamatan | perumahan | wilayah
++                ket         TEXT,                      -- konteks, mis. nama kelurahan
++                bobot       SMALLINT NOT NULL DEFAULT 1,
++                kata_kunci  TEXT,
++                titik       geometry(Point, 4326) NOT NULL,   -- titik wakil (untuk hasil pencarian)
++                geom        geometry(Geometry, 4326)          -- garis jalan / poligon wilayah (untuk alamat)
++            )
++        ");
++        DB::statement('CREATE INDEX IF NOT EXISTS idx_gazetir_titik ON naik.gazetir USING GIST (titik)');
++        DB::statement('CREATE INDEX IF NOT EXISTS idx_gazetir_geom ON naik.gazetir USING GIST (geom)');
++        DB::statement('CREATE INDEX IF NOT EXISTS idx_gazetir_jenis ON naik.gazetir (jenis)');
++
++        // pencarian teks cepat (ILIKE '%...%'). pg_trgm butuh hak buat extension; kalau gagal, tetap jalan tanpa index.
++        try {
++            DB::statement('CREATE EXTENSION IF NOT EXISTS pg_trgm');
++            DB::statement('CREATE INDEX IF NOT EXISTS idx_poi_kata_trgm ON naik.poi USING GIN (kata_kunci gin_trgm_ops)');
++            DB::statement('CREATE INDEX IF NOT EXISTS idx_gazetir_kata_trgm ON naik.gazetir USING GIN (kata_kunci gin_trgm_ops)');
++        } catch (\Throwable $e) {
++            // abaikan
++        }
++    }
++
++    public function down(): void
++    {
++        DB::statement('DROP TABLE IF EXISTS naik.gazetir');
++        DB::statement('DROP INDEX IF EXISTS naik.uq_poi_osm_ref');
++        DB::statement('ALTER TABLE naik.poi DROP COLUMN IF EXISTS osm_ref, DROP COLUMN IF EXISTS kata_kunci, DROP COLUMN IF EXISTS bobot');
++    }
++};
+diff --git a/backend/database/seeders/NaikPoiSeeder.php b/backend/database/seeders/NaikPoiSeeder.php
+index 7f094a4..81f4298 100644
+--- a/backend/database/seeders/NaikPoiSeeder.php
++++ b/backend/database/seeders/NaikPoiSeeder.php
+@@ -5,188 +5,467 @@
+ use Illuminate\Database\Seeder;
+ use Illuminate\Support\Facades\DB;
+ use Illuminate\Support\Facades\Http;
+-use Illuminate\Support\Facades\Log;
+ 
++/**
++ * Data tempat untuk pencarian & alamat NAIK, semuanya dari OpenStreetMap (Overpass API):
++ *  1. naik.poi     : SEMUA tempat bernama (sekolah, kampus, toko, masjid, RS, kantor, halte, gedung, dll.)
++ *  2. naik.gazetir : nama jalan (digabung per jalan), batas kelurahan/kecamatan, perumahan & nama wilayah
++ *  3. alamat tiap POI dilengkapi otomatis: jalan terdekat + kelurahan (titik di dalam poligon kelurahan)
++ *
++ * Jalankan : php artisan db:seed --class=NaikPoiSeeder
++ * Hasil mentah Overpass disimpan di storage/app/osm/*.json (jalan ulang tidak perlu download lagi).
++ * Ambil ulang data terbaru dari OSM: hapus folder storage/app/osm lalu jalankan lagi.
++ */
+ class NaikPoiSeeder extends Seeder
+ {
+-    /**
+-     * Seed tabel naik.poi dari OpenStreetMap (Overpass API) dengan fallback kurasi lokal.
+-     */
++    /** Kota Bogor + pinggiran (selatan, barat, utara, timur) */
++    private const BBOX = '-6.70,106.70,-6.48,106.90';
++
++    /** Server Overpass (dicoba berurutan kalau ada yang sibuk) */
++    private const SERVER = [
++        'https://overpass-api.de/api/interpreter',
++        'https://overpass.kumi.systems/api/interpreter',
++        'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
++    ];
++
+     public function run(): void
+     {
+-        $osmCount = $this->seedFromOverpass();
++        ini_set('memory_limit', '2048M');
++        set_time_limit(0);
++        $b = self::BBOX;
+ 
+-        if ($osmCount === 0) {
+-            $this->seedCuratedList();
+-        }
+-    }
++        $wilayah = $this->ambil('wilayah', "[out:json][timeout:300];
++            rel[\"boundary\"=\"administrative\"][\"admin_level\"~\"^(6|7)$\"]($b);
++            out tags geom;
++            (
++              node[\"place\"~\"^(town|suburb|quarter|village|neighbourhood|hamlet)$\"][\"name\"]($b);
++              way[\"place\"][\"name\"]($b);
++              way[\"landuse\"=\"residential\"][\"name\"]($b);
++              rel[\"landuse\"=\"residential\"][\"name\"]($b);
++            );
++            out tags center;");
+ 
+-    /**
+-     * Ambil data POI Kota Bogor secara langsung dari Overpass API OpenStreetMap.
+-     */
+-    private function seedFromOverpass(): int
+-    {
+-        $overpassQuery = '
+-            [out:json][timeout:25];
++        $jalan = $this->ambil('jalan', "[out:json][timeout:300];
++            way[\"highway\"][\"name\"][\"highway\"!~\"^(proposed|construction|platform|bus_stop|elevator|corridor)$\"]($b);
++            out tags geom;");
++
++        $poi = $this->ambil('poi', "[out:json][timeout:300];
+             (
+-              node["amenity"~"restaurant|cafe|fast_food|food_court|hospital|clinic|university|college|school|bus_station"](-6.66,106.74,-6.53,106.86);
+-              node["tourism"~"attraction|museum|viewpoint|theme_park"](-6.66,106.74,-6.53,106.86);
+-              node["leisure"="park"](-6.66,106.74,-6.53,106.86);
+-              node["shop"~"mall|supermarket|department_store|bakery"](-6.66,106.74,-6.53,106.86);
++              nwr[\"name\"][\"amenity\"]($b);
++              nwr[\"name\"][\"shop\"]($b);
++              nwr[\"name\"][\"tourism\"]($b);
++              nwr[\"name\"][\"leisure\"]($b);
++              nwr[\"name\"][\"office\"]($b);
++              nwr[\"name\"][\"healthcare\"]($b);
++              nwr[\"name\"][\"craft\"]($b);
++              nwr[\"name\"][\"historic\"]($b);
++              nwr[\"name\"][\"club\"]($b);
++              nwr[\"name\"][\"sport\"]($b);
++              nwr[\"name\"][\"public_transport\"]($b);
++              nwr[\"name\"][\"railway\"~\"^(station|halt|stop)$\"]($b);
++              node[\"name\"][\"highway\"=\"bus_stop\"]($b);
++              nwr[\"name\"][\"building\"]($b);
++              nwr[\"name\"][\"landuse\"~\"^(commercial|retail|industrial|education|religious|military|cemetery)$\"]($b);
+             );
+-            out body 200;
+-        ';
++            out tags center;");
+ 
+-        try {
+-            $response = Http::timeout(15)->asForm()->post('https://overpass-api.de/api/interpreter', [
+-                'data' => $overpassQuery,
+-            ]);
++        if ($wilayah === null && $jalan === null && $poi === null) {
++            $this->info('Overpass tidak bisa dihubungi — hanya mengisi daftar kurasi lokal.');
++            $this->simpanKurasi();
++            return;
++        }
+ 
+-            if (!$response->successful()) {
+-                return 0;
++        DB::transaction(function () use ($wilayah, $jalan, $poi) {
++            if ($wilayah !== null) {
++                $this->simpanWilayah($wilayah);
++            }
++            if ($jalan !== null) {
++                $this->simpanJalan($jalan);
++            }
++            if ($poi !== null) {
++                $this->simpanPoi($poi);
+             }
++            $this->simpanKurasi();
++            $this->info('Melengkapi alamat (jalan + kelurahan)…');
++            $this->perkayaAlamat();
++        });
+ 
+-            $elements = $response->json('elements') ?? [];
+-            $inserted = 0;
++        $n = DB::selectOne('SELECT (SELECT count(*) FROM naik.poi) AS poi,
++                (SELECT count(*) FROM naik.gazetir WHERE jenis = \'jalan\') AS jalan,
++                (SELECT count(*) FROM naik.gazetir WHERE jenis <> \'jalan\') AS wilayah');
++        $this->info("Selesai: {$n->poi} tempat, {$n->jalan} jalan, {$n->wilayah} wilayah/perumahan.");
++    }
+ 
+-            foreach ($elements as $el) {
+-                $tags = $el['tags'] ?? [];
+-                $nama = $tags['name'] ?? null;
++    // ------------------------------------------------------------------ ambil data
+ 
+-                if (!$nama) {
+-                    continue;
++    /** Baca dari storage/app/osm/{nama}.json kalau ada; kalau belum, unduh dari Overpass lalu simpan. */
++    private function ambil(string $nama, string $query): ?array
++    {
++        $file = storage_path("app/osm/{$nama}.json");
++        if (is_file($file)) {
++            $this->info("[{$nama}] pakai file tersimpan {$file}");
++            return json_decode(file_get_contents($file), true)['elements'] ?? [];
++        }
++
++        foreach (self::SERVER as $server) {
++            $this->info("[{$nama}] mengunduh dari {$server} … (bisa 1–3 menit)");
++            try {
++                $res = Http::timeout(320)->withHeaders(['User-Agent' => 'NAIK-Angkot/1.0 (WebGIS tugas SIG IPB)'])
++                    ->asForm()->post($server, ['data' => $query]);
++                if ($res->successful() && is_array($res->json('elements'))) {
++                    @mkdir(dirname($file), 0775, true);
++                    file_put_contents($file, $res->body());
++                    $this->info("[{$nama}] " . count($res->json('elements')) . ' elemen');
++                    return $res->json('elements');
+                 }
++                $this->info("[{$nama}] gagal (HTTP {$res->status()}), coba server lain");
++            } catch (\Throwable $e) {
++                $this->info("[{$nama}] gagal: " . $e->getMessage());
++            }
++        }
++        return null;
++    }
++
++    // ------------------------------------------------------------------ wilayah
+ 
+-                $kategori = $this->resolveKategori($tags);
+-                $subKategori = $tags['amenity'] ?? $tags['tourism'] ?? $tags['shop'] ?? $tags['leisure'] ?? null;
+-                $alamat = $tags['addr:street'] ?? ($tags['addr:full'] ?? null);
+-
+-                DB::statement('
+-                    INSERT INTO naik.poi (osm_id, nama_tempat, kategori, sub_kategori, alamat, geom, sumber_data)
+-                    VALUES (?, ?, ?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), \'OpenStreetMap\')
+-                    ON CONFLICT (osm_id) DO UPDATE
+-                    SET nama_tempat = EXCLUDED.nama_tempat,
+-                        kategori = EXCLUDED.kategori,
+-                        sub_kategori = EXCLUDED.sub_kategori,
+-                        alamat = COALESCE(EXCLUDED.alamat, naik.poi.alamat),
+-                        geom = EXCLUDED.geom,
+-                        updated_at = CURRENT_TIMESTAMP
+-                ', [
+-                    $el['id'],
+-                    $nama,
+-                    $kategori,
+-                    $subKategori,
+-                    $alamat,
+-                    $el['lon'],
+-                    $el['lat'],
++    private function simpanWilayah(array $els): void
++    {
++        DB::statement("DELETE FROM naik.gazetir WHERE jenis IN ('kelurahan', 'kecamatan', 'perumahan', 'wilayah')");
++        $baris = [];
++
++        foreach ($els as $el) {
++            $t = $el['tags'] ?? [];
++            $nama = trim($t['name'] ?? '');
++            if ($nama === '') {
++                continue;
++            }
++            $ref = $el['type'][0] . $el['id'];
++
++            // batas administrasi: poligon dari garis-garis anggota relasi (dirakit oleh ST_BuildArea)
++            if (($t['boundary'] ?? null) === 'administrative') {
++                $garis = [];
++                foreach ($el['members'] ?? [] as $m) {
++                    if (($m['type'] ?? '') === 'way' && count($m['geometry'] ?? []) >= 2) {
++                        $garis[] = '(' . implode(',', array_map(fn ($p) => "{$p['lon']} {$p['lat']}", $m['geometry'])) . ')';
++                    }
++                }
++                if (!$garis) {
++                    continue;
++                }
++                $jenis = ($t['admin_level'] ?? '') === '6' ? 'kecamatan' : 'kelurahan';
++                DB::statement("
++                    INSERT INTO naik.gazetir (osm_ref, nama, jenis, bobot, kata_kunci, titik, geom)
++                    SELECT ?, ?, ?, ?, ?, ST_PointOnSurface(a), a
++                    FROM (SELECT ST_Multi(ST_BuildArea(ST_GeomFromText(?, 4326))) AS a) x
++                    WHERE a IS NOT NULL AND NOT ST_IsEmpty(a)
++                    ON CONFLICT (osm_ref) DO NOTHING", [
++                    $ref, $nama, $jenis, $jenis === 'kecamatan' ? 3 : 2,
++                    $this->kunci([$nama, $jenis, $jenis === 'kelurahan' ? 'desa' : 'kec']),
++                    'MULTILINESTRING(' . implode(',', $garis) . ')',
+                 ]);
++                continue;
++            }
+ 
+-                $inserted++;
++            [$lat, $lon] = $this->koordinat($el);
++            if ($lat === null) {
++                continue;
+             }
++            $perumahan = ($t['landuse'] ?? null) === 'residential'
++                || preg_match('/^(perum|perumahan|komplek|kompleks|komp\.?|villa|vila|griya|graha|taman|bukit|cluster|residen)/i', $nama);
++            $jenis = $perumahan ? 'perumahan' : 'wilayah';
++            $bobot = in_array($t['place'] ?? '', ['town', 'suburb', 'village']) ? 2 : 1;
++            $baris[] = [$ref, $nama, $jenis, $bobot, $this->kunci([$nama, $perumahan ? 'perumahan perum komplek' : ($t['place'] ?? '')]), $lon, $lat];
++        }
+ 
+-            return $inserted;
+-        } catch (\Throwable $e) {
+-            Log::warning('Gagal fetch Overpass API: ' . $e->getMessage());
+-            return 0;
++        $this->sisipGazetirTitik($baris);
++        $this->info('[wilayah] tersimpan');
++    }
++
++    private function sisipGazetirTitik(array $baris): void
++    {
++        foreach (array_chunk($baris, 500) as $chunk) {
++            $values = implode(',', array_fill(0, count($chunk), '(?, ?, ?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326))'));
++            DB::statement("
++                INSERT INTO naik.gazetir (osm_ref, nama, jenis, bobot, kata_kunci, titik)
++                VALUES {$values}
++                ON CONFLICT (osm_ref) DO UPDATE SET nama = EXCLUDED.nama, jenis = EXCLUDED.jenis, bobot = EXCLUDED.bobot,
++                    kata_kunci = EXCLUDED.kata_kunci, titik = EXCLUDED.titik", array_merge(...$chunk));
+         }
+     }
+ 
+-    /**
+-     * Dataset kurasi tempat penting di koridor trayek angkot Kota Bogor.
+-     */
+-    private function seedCuratedList(): void
++    // ------------------------------------------------------------------ jalan
++
++    private function simpanJalan(array $els): void
+     {
+-        $curated = [
+-            // Transportasi
+-            ['Stasiun Bogor', 'transportasi', 'station', 'Jl. Nyi Raja Permas, Cibogor', -6.594289, 106.790770],
+-            ['Terminal Baranangsiang', 'transportasi', 'bus_station', 'Jl. Pajajaran, Baranangsiang', -6.604086, 106.805958],
+-            ['Terminal Bubulak', 'transportasi', 'bus_station', 'Jl. KH R. Abdullah Bin Nuh, Bubulak', -6.569292, 106.755167],
+-            ['Terminal Merdeka', 'transportasi', 'bus_station', 'Jl. Merdeka, Ciwaringin', -6.592376, 106.786418],
+-            ['Terminal Laladon', 'transportasi', 'bus_station', 'Laladon, Ciomas', -6.576539, 106.752946],
+-
+-            // Wisata & Rekreasi
+-            ['Kebun Raya Bogor', 'wisata', 'park', 'Jl. Ir. H. Juanda No.13, Paledang', -6.597629, 106.799569],
+-            ['Museum Zoologi Bogor', 'wisata', 'museum', 'Jl. Ir. H. Juanda No.9, Paledang', -6.602220, 106.797220],
+-            ['Taman Kencana', 'wisata', 'park', 'Jl. Taman Kencana No.1, Babakan', -6.588820, 106.802310],
+-            ['Taman Heulang', 'wisata', 'park', 'Jl. Heulang, Tanah Sareal', -6.574100, 106.797900],
+-            ['Alun-Alun Kota Bogor', 'wisata', 'park', 'Jl. Kapten Muslihat, Pabaton', -6.595100, 106.791200],
+-            ['Taman Sempur', 'wisata', 'park', 'Sempur, Bogor Tengah', -6.590800, 106.800500],
+-
+-            // Kuliner
+-            ['Toge Goreng Ibu Hj. Omah', 'kuliner', 'restaurant', 'Jl. Jend. Sudirman No.23', -6.589120, 106.793210],
+-            ['Soto Kuning Pak Salam', 'kuliner', 'restaurant', 'Jl. Suryakencana, Babakan Pasar', -6.602110, 106.799120],
+-            ['Asinan Sedap Gedung Dalam', 'kuliner', 'restaurant', 'Jl. Siliwangi No.27C, Sukasari', -6.613200, 106.808900],
+-            ['Ngo Hiang Gedung Dalam', 'kuliner', 'restaurant', 'Jl. Suryakencana No.256', -6.605400, 106.800900],
+-            ['Roti Unyil Venus', 'kuliner', 'bakery', 'Jl. Pajajaran No.1, Sukasari', -6.611100, 106.807800],
+-            ['Kopi Nako Pajajaran', 'kuliner', 'cafe', 'Jl. Pajajaran Indah V No.7', -6.609500, 106.812200],
+-            ['Popolo Coffee Taman Kencana', 'kuliner', 'cafe', 'Jl. Loader No.9, Baranangsiang', -6.599100, 106.809300],
+-            ['Es Sekoteng Bogor Permai', 'kuliner', 'cafe', 'Jl. Jend. Sudirman No.23', -6.587800, 106.794100],
+-
+-            // Pusat Belanja
+-            ['Bogor Trade Mall (BTM)', 'belanja', 'mall', 'Jl. Ir. H. Juanda No.68, Paledang', -6.605046, 106.796286],
+-            ['Botani Square Mall', 'belanja', 'mall', 'Jl. Pajajaran, Tegallega', -6.601700, 106.806200],
+-            ['Lippo Plaza Keboen Raya', 'belanja', 'mall', 'Jl. Pajajaran No.27, Babakan', -6.594600, 106.804800],
+-            ['Pasar Anyar', 'belanja', 'market', 'Jl. Pabaton, Bogor Tengah', -6.592200, 106.792550],
+-            ['Pasar Bogor (Suryakencana)', 'belanja', 'market', 'Jl. Suryakencana, Babakan Pasar', -6.602977, 106.799076],
+-
+-            // Pendidikan
+-            ['Institut Pertanian Bogor (Kampus Baranangsiang)', 'pendidikan', 'university', 'Jl. Pajajaran, Baranangsiang', -6.601100, 106.804900],
+-            ['Universitas Pakuan', 'pendidikan', 'university', 'Jl. Pakuan, Tegallega', -6.602300, 106.812900],
+-            ['Universitas Ibn Khaldun', 'pendidikan', 'university', 'Jl. KH R. Abdullah Bin Nuh', -6.561500, 106.779400],
+-            ['SMAN 1 Kota Bogor', 'pendidikan', 'school', 'Jl. Ir. H. Juanda No.16', -6.592900, 106.793800],
+-
+-            // Kesehatan
+-            ['RS PMI Bogor', 'kesehatan', 'hospital', 'Jl. Pajajaran No.80, Tegallega', -6.598200, 106.804300],
+-            ['RS Siloam Bogor', 'kesehatan', 'hospital', 'Jl. Pajajaran No.27, Babakan', -6.594900, 106.805200],
+-            ['RS Salak Bogor', 'kesehatan', 'hospital', 'Jl. Jend. Sudirman No.8, Sempur', -6.590100, 106.794600],
+-            ['RSUD Kota Bogor', 'kesehatan', 'hospital', 'Jl. DR. Sumeru No.120, Menteng', -6.583500, 106.772500],
+-        ];
++        DB::statement('CREATE TEMP TABLE IF NOT EXISTS _jalan (nama text, kelas smallint, geom geometry(LineString, 4326)) ON COMMIT DROP');
++        DB::statement('TRUNCATE _jalan');
++
++        $kelas = ['trunk' => 3, 'primary' => 3, 'secondary' => 2, 'tertiary' => 2, 'trunk_link' => 2, 'primary_link' => 2];
++        $baris = [];
++        foreach ($els as $el) {
++            $nama = trim($el['tags']['name'] ?? '');
++            $g = $el['geometry'] ?? [];
++            if ($nama === '' || count($g) < 2) {
++                continue;
++            }
++            $wkt = 'LINESTRING(' . implode(',', array_map(fn ($p) => "{$p['lon']} {$p['lat']}", $g)) . ')';
++            $baris[] = [$nama, $kelas[$el['tags']['highway'] ?? ''] ?? 1, $wkt];
++        }
++        foreach (array_chunk($baris, 400) as $chunk) {
++            $values = implode(',', array_fill(0, count($chunk), '(?, ?, ST_GeomFromText(?, 4326))'));
++            DB::statement("INSERT INTO _jalan (nama, kelas, geom) VALUES {$values}", array_merge(...$chunk));
++        }
++
++        // ruas bernama sama yang saling berdekatan (< ±400 m) = satu jalan; jalan senama di perumahan lain tetap terpisah
++        DB::statement("DELETE FROM naik.gazetir WHERE jenis = 'jalan'");
++        DB::statement("
++            INSERT INTO naik.gazetir (osm_ref, nama, jenis, bobot, kata_kunci, titik, geom)
++            SELECT 'jalan:' || md5(nama || ':' || ST_AsText(ST_PointN(ST_GeometryN(g, 1), 1))), nama, 'jalan', bobot,
++                   lower(nama) || CASE WHEN nama ILIKE 'jalan %' THEN ' jl' WHEN nama ILIKE 'gang %' THEN ' gg' ELSE '' END,
++                   ST_ClosestPoint(g, ST_Centroid(g)), g
++            FROM (
++                SELECT nama, MAX(kelas) AS bobot, ST_Multi(ST_Collect(geom)) AS g
++                FROM (SELECT *, ST_ClusterDBSCAN(geom, eps := 0.0035, minpoints := 1) OVER (PARTITION BY nama) AS klaster FROM _jalan) c
++                GROUP BY nama, klaster
++            ) x
++            ON CONFLICT (osm_ref) DO NOTHING");
++        $this->info('[jalan] ' . count($baris) . ' ruas digabung per jalan');
++    }
++
++    // ------------------------------------------------------------------ POI
+ 
+-        foreach ($curated as $item) {
+-            DB::statement('
+-                INSERT INTO naik.poi (nama_tempat, kategori, sub_kategori, alamat, geom, sumber_data)
+-                VALUES (?, ?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), \'Kurasi Lokal\')
+-                ON CONFLICT DO NOTHING
+-            ', [
+-                $item[0],
+-                $item[1],
+-                $item[2],
+-                $item[3],
+-                $item[5],
+-                $item[4],
++    private function simpanPoi(array $els): void
++    {
++        $baris = [];
++        foreach ($els as $el) {
++            $t = $el['tags'] ?? [];
++            $nama = trim($t['name'] ?? '');
++            if ($nama === '') {
++                continue;
++            }
++            [$lat, $lon] = $this->koordinat($el);
++            if ($lat === null) {
++                continue;
++            }
++            [$kategori, $sub, $label, $bobot] = $this->klasifikasi($t);
++            $alamat = trim(($t['addr:street'] ?? '') . ' ' . ($t['addr:housenumber'] ?? '')) ?: ($t['addr:full'] ?? null);
++            $kunci = $this->kunci([$nama, $t['alt_name'] ?? '', $t['official_name'] ?? '', $t['short_name'] ?? '', $t['old_name'] ?? '',
++                $t['brand'] ?? '', $t['name:en'] ?? '', $label]);
++            $baris[] = [$el['id'], $el['type'][0] . $el['id'], mb_substr($nama, 0, 255), $kategori, mb_substr((string) $sub, 0, 50), $alamat, $kunci, $bobot, $lon, $lat];
++        }
++
++        foreach (array_chunk($baris, 500) as $chunk) {
++            $values = implode(',', array_fill(0, count($chunk), "(?, ?, ?, ?, ?, ?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), 'OpenStreetMap')"));
++            DB::statement("
++                INSERT INTO naik.poi (osm_id, osm_ref, nama_tempat, kategori, sub_kategori, alamat, kata_kunci, bobot, geom, sumber_data)
++                VALUES {$values}
++                ON CONFLICT (osm_ref) DO UPDATE SET nama_tempat = EXCLUDED.nama_tempat, kategori = EXCLUDED.kategori,
++                    sub_kategori = EXCLUDED.sub_kategori, alamat = EXCLUDED.alamat, kata_kunci = EXCLUDED.kata_kunci,
++                    bobot = EXCLUDED.bobot, geom = EXCLUDED.geom, updated_at = CURRENT_TIMESTAMP", array_merge(...$chunk));
++        }
++
++        // tempat yang sama tercatat dua kali (mis. titik "SMAN 1" + gedung "SMAN 1") -> simpan yang paling penting
++        DB::statement("
++            DELETE FROM naik.poi a USING naik.poi b
++            WHERE a.poi_id <> b.poi_id AND a.sumber_data = 'OpenStreetMap'
++              AND lower(a.nama_tempat) = lower(b.nama_tempat) AND ST_DWithin(a.geom, b.geom, 0.0008)
++              AND (a.bobot < b.bobot OR (a.bobot = b.bobot AND a.poi_id > b.poi_id))");
++        $this->info('[poi] ' . count($baris) . ' tempat bernama');
++    }
++
++    /** Lengkapi alamat: "Jalan X No", kelurahan — dari jalan terdekat & poligon kelurahan. */
++    private function perkayaAlamat(): void
++    {
++        $kel = "COALESCE(
++                    (SELECT k.nama FROM naik.gazetir k WHERE k.jenis = 'kelurahan' AND ST_Contains(k.geom, %1\$s) LIMIT 1),
++                    (SELECT w.nama FROM naik.gazetir w WHERE w.jenis IN ('kelurahan', 'wilayah') AND ST_DWithin(w.titik, %1\$s, 0.02)
++                     ORDER BY w.titik <-> %1\$s LIMIT 1))";
++
++        DB::statement('UPDATE naik.gazetir j SET ket = ' . sprintf($kel, 'j.titik') . " WHERE j.jenis IN ('jalan', 'perumahan')");
++
++        DB::statement("
++            WITH x AS (
++                SELECT p.poi_id,
++                       COALESCE(NULLIF(p.alamat, ''),
++                           (SELECT j.nama FROM naik.gazetir j WHERE j.jenis = 'jalan' AND ST_DWithin(j.geom, p.geom, 0.0015)
++                            ORDER BY j.geom <-> p.geom LIMIT 1)) AS jalan,
++                       " . sprintf($kel, 'p.geom') . " AS kel
++                FROM naik.poi p WHERE p.sumber_data = 'OpenStreetMap'
++            )
++            UPDATE naik.poi p
++            SET alamat = NULLIF(concat_ws(', ', x.jalan, CASE WHEN x.kel IS DISTINCT FROM x.jalan THEN x.kel END), ''),
++                kata_kunci = p.kata_kunci || ' ' || lower(COALESCE(concat_ws(' ', x.jalan, x.kel), ''))
++            FROM x WHERE x.poi_id = p.poi_id");
++    }
++
++    // ------------------------------------------------------------------ kurasi lokal (selalu ada walau Overpass gagal)
++
++    private function simpanKurasi(): void
++    {
++        $kurasi = [
++            ['Stasiun Bogor', 'transportasi', 'station', 'Jl. Nyi Raja Permas, Cibogor', -6.594289, 106.790770, 'stasiun krl kereta'],
++            ['Terminal Baranangsiang', 'transportasi', 'bus_station', 'Jl. Pajajaran, Baranangsiang', -6.604086, 106.805958, 'terminal bus'],
++            ['Terminal Bubulak', 'transportasi', 'bus_station', 'Jl. KH R. Abdullah Bin Nuh, Bubulak', -6.569292, 106.755167, 'terminal'],
++            ['Terminal Merdeka', 'transportasi', 'bus_station', 'Jl. Merdeka, Ciwaringin', -6.592376, 106.786418, 'terminal angkot'],
++            ['Terminal Laladon', 'transportasi', 'bus_station', 'Laladon, Ciomas', -6.576539, 106.752946, 'terminal'],
++            ['Kebun Raya Bogor', 'wisata', 'park', 'Jl. Ir. H. Juanda No.13, Paledang', -6.597629, 106.799569, 'taman wisata krb'],
++            ['Museum Zoologi Bogor', 'wisata', 'museum', 'Jl. Ir. H. Juanda No.9, Paledang', -6.602220, 106.797220, 'museum'],
++            ['Taman Sempur', 'wisata', 'park', 'Sempur, Bogor Tengah', -6.590800, 106.800500, 'taman'],
++            ['Alun-Alun Kota Bogor', 'wisata', 'park', 'Jl. Kapten Muslihat, Pabaton', -6.595100, 106.791200, 'taman alun alun'],
++            ['Bogor Trade Mall (BTM)', 'belanja', 'mall', 'Jl. Ir. H. Juanda No.68, Paledang', -6.605046, 106.796286, 'mall btm'],
++            ['Botani Square Mall', 'belanja', 'mall', 'Jl. Pajajaran, Tegallega', -6.601700, 106.806200, 'mall botsq'],
++            ['Pasar Anyar', 'belanja', 'market', 'Jl. Pabaton, Bogor Tengah', -6.592200, 106.792550, 'pasar'],
++            ['IPB University Kampus Baranangsiang', 'pendidikan', 'university', 'Jl. Pajajaran, Baranangsiang', -6.601100, 106.804900, 'kampus universitas institut pertanian bogor'],
++            ['IPB University Kampus Dramaga', 'pendidikan', 'university', 'Jl. Raya Dramaga, Babakan', -6.558961, 106.725946, 'kampus universitas institut pertanian bogor'],
++            ['Sekolah Vokasi IPB University', 'pendidikan', 'college', 'Jl. Kumbang No.14, Babakan', -6.588536, 106.806272, 'kampus vokasi sv ipb cilibende'],
++            ['Universitas Pakuan', 'pendidikan', 'university', 'Jl. Pakuan, Tegallega', -6.602300, 106.812900, 'kampus unpak'],
++            ['RS PMI Bogor', 'kesehatan', 'hospital', 'Jl. Pajajaran No.80, Tegallega', -6.598200, 106.804300, 'rumah sakit rs'],
++            ['RSUD Kota Bogor', 'kesehatan', 'hospital', 'Jl. DR. Sumeru No.120, Menteng', -6.583500, 106.772500, 'rumah sakit rs'],
++        ];
++        foreach ($kurasi as $i => $k) {
++            DB::statement("
++                INSERT INTO naik.poi (osm_ref, nama_tempat, kategori, sub_kategori, alamat, kata_kunci, bobot, geom, sumber_data)
++                VALUES (?, ?, ?, ?, ?, ?, 3, ST_SetSRID(ST_MakePoint(?, ?), 4326), 'Kurasi Lokal')
++                ON CONFLICT (osm_ref) DO UPDATE SET nama_tempat = EXCLUDED.nama_tempat, alamat = EXCLUDED.alamat,
++                    kata_kunci = EXCLUDED.kata_kunci, geom = EXCLUDED.geom", [
++                'kurasi' . ($i + 1), $k[0], $k[1], $k[2], $k[3], $this->kunci([$k[0], $k[6], $k[3]]), $k[5], $k[4],
+             ]);
+         }
+     }
+ 
++    // ------------------------------------------------------------------ bantuan
++
++    private function koordinat(array $el): array
++    {
++        if (isset($el['lat'], $el['lon'])) {
++            return [(float) $el['lat'], (float) $el['lon']];
++        }
++        if (isset($el['center'])) {
++            return [(float) $el['center']['lat'], (float) $el['center']['lon']];
++        }
++        return [null, null];
++    }
++
++    private function kunci(array $bagian): string
++    {
++        $teks = mb_strtolower(implode(' ', array_filter(array_map('trim', $bagian))));
++        return trim(preg_replace('/\s+/', ' ', $teks));
++    }
++
+     /**
+-     * Klasifikasikan tag OSM ke kategori sistem.
++     * Tag OSM -> [kategori, sub_kategori, kata kunci Indonesia, bobot penting (0–3)].
++     * Kata kunci membuat "sekolah" ketemu "SDN Polisi 1", "rs" ketemu "RS PMI", dst.
+      */
+-    private function resolveKategori(array $tags): string
++    private function klasifikasi(array $t): array
+     {
+-        if (isset($tags['amenity'])) {
+-            if (in_array($tags['amenity'], ['restaurant', 'cafe', 'fast_food', 'food_court'])) {
+-                return 'kuliner';
+-            }
+-            if (in_array($tags['amenity'], ['hospital', 'clinic', 'pharmacy'])) {
+-                return 'kesehatan';
+-            }
+-            if (in_array($tags['amenity'], ['university', 'college', 'school'])) {
+-                return 'pendidikan';
+-            }
+-            if ($tags['amenity'] === 'bus_station') {
+-                return 'transportasi';
+-            }
++        $a = $t['amenity'] ?? null;
++        $amenity = [
++            'university' => ['pendidikan', 'universitas kampus perguruan tinggi', 3],
++            'college' => ['pendidikan', 'kampus sekolah tinggi politeknik akademi vokasi', 3],
++            'school' => ['pendidikan', 'sekolah sd smp sma smk mi mts ma', 2],
++            'kindergarten' => ['pendidikan', 'tk paud sekolah taman kanak', 1],
++            'hospital' => ['kesehatan', 'rumah sakit rs', 3],
++            'clinic' => ['kesehatan', 'klinik puskesmas balai pengobatan', 2],
++            'doctors' => ['kesehatan', 'dokter praktik', 1],
++            'dentist' => ['kesehatan', 'dokter gigi', 1],
++            'pharmacy' => ['kesehatan', 'apotek apotik obat', 1],
++            'restaurant' => ['kuliner', 'restoran rumah makan tempat makan', 1],
++            'cafe' => ['kuliner', 'kafe cafe kopi coffee', 1],
++            'fast_food' => ['kuliner', 'makanan cepat saji tempat makan', 1],
++            'food_court' => ['kuliner', 'food court pujasera', 1],
++            'marketplace' => ['belanja', 'pasar', 3],
++            'bank' => ['keuangan', 'bank', 1],
++            'atm' => ['keuangan', 'atm', 0],
++            'bus_station' => ['transportasi', 'terminal bus angkot', 3],
++            'taxi' => ['transportasi', 'pangkalan', 0],
++            'fuel' => ['layanan', 'spbu pom bensin pertamina', 1],
++            'police' => ['kantor', 'polisi polsek polres polresta', 2],
++            'fire_station' => ['kantor', 'pemadam kebakaran damkar', 1],
++            'post_office' => ['kantor', 'kantor pos', 1],
++            'townhall' => ['kantor', 'kantor kelurahan kecamatan balai kota pemerintah', 2],
++            'courthouse' => ['kantor', 'pengadilan', 1],
++            'community_centre' => ['layanan', 'balai warga gedung serbaguna', 1],
++            'library' => ['pendidikan', 'perpustakaan', 1],
++            'cinema' => ['wisata', 'bioskop', 2],
++            'place_of_worship' => ['ibadah', 'tempat ibadah', 1],
++            'parking' => ['layanan', 'parkir', 0],
++        ];
++        if ($a === 'place_of_worship') {
++            $agama = ['muslim' => 'masjid musholla mushola surau', 'christian' => 'gereja', 'buddhist' => 'vihara klenteng', 'hindu' => 'pura', 'confucian' => 'klenteng'];
++            return ['ibadah', $a, $agama[$t['religion'] ?? ''] ?? 'tempat ibadah', 1];
++        }
++        if ($a && isset($amenity[$a])) {
++            return [$amenity[$a][0], $a, $amenity[$a][1], $amenity[$a][2]];
++        }
++
++        if (isset($t['railway']) && in_array($t['railway'], ['station', 'halt', 'stop'])) {
++            return ['transportasi', 'station', 'stasiun kereta krl commuter', 3];
++        }
++        if (($t['highway'] ?? null) === 'bus_stop' || isset($t['public_transport'])) {
++            return ['transportasi', 'bus_stop', 'halte shelter pemberhentian', 1];
++        }
++
++        if ($s = $t['shop'] ?? null) {
++            $shop = [
++                'mall' => ['mall pusat perbelanjaan plaza', 3], 'department_store' => ['toserba pusat perbelanjaan', 2],
++                'supermarket' => ['supermarket swalayan', 2], 'convenience' => ['minimarket indomaret alfamart warung', 1],
++                'bakery' => ['toko roti kue', 1], 'clothes' => ['toko baju pakaian', 1], 'electronics' => ['toko elektronik', 1],
++                'mobile_phone' => ['toko hp handphone ponsel', 1], 'hardware' => ['toko bangunan material', 1],
++                'books' => ['toko buku', 1], 'stationery' => ['alat tulis atk fotokopi', 1], 'car_repair' => ['bengkel mobil', 1],
++                'motorcycle' => ['dealer bengkel motor', 1], 'hairdresser' => ['salon pangkas rambut barbershop', 0],
++                'laundry' => ['laundry binatu', 0],
++            ];
++            return ['belanja', $s, $shop[$s][0] ?? 'toko', $shop[$s][1] ?? 1];
+         }
+ 
+-        if (isset($tags['tourism']) || (isset($tags['leisure']) && $tags['leisure'] === 'park')) {
+-            return 'wisata';
++        if ($v = $t['tourism'] ?? null) {
++            $tour = ['hotel' => ['akomodasi', 'hotel penginapan', 2], 'guest_house' => ['akomodasi', 'penginapan guest house', 1],
++                'hostel' => ['akomodasi', 'penginapan hostel', 1], 'museum' => ['wisata', 'museum', 2], 'zoo' => ['wisata', 'kebun binatang', 2],
++                'theme_park' => ['wisata', 'taman bermain wisata', 2], 'attraction' => ['wisata', 'tempat wisata', 2]];
++            return [$tour[$v][0] ?? 'wisata', $v, $tour[$v][1] ?? 'wisata', $tour[$v][2] ?? 1];
+         }
+ 
+-        if (isset($tags['shop'])) {
+-            return 'belanja';
++        if ($v = $t['leisure'] ?? null) {
++            $lei = ['park' => ['wisata', 'taman', 2], 'stadium' => ['olahraga', 'stadion', 3], 'sports_centre' => ['olahraga', 'gor gelanggang olahraga', 2],
++                'pitch' => ['olahraga', 'lapangan', 1], 'swimming_pool' => ['olahraga', 'kolam renang', 1], 'fitness_centre' => ['olahraga', 'gym fitness', 1],
++                'playground' => ['wisata', 'taman bermain', 0]];
++            return [$lei[$v][0] ?? 'wisata', $v, $lei[$v][1] ?? 'rekreasi', $lei[$v][2] ?? 1];
+         }
+ 
+-        return 'lainnya';
++        if ($v = $t['office'] ?? null) {
++            $label = $v === 'government' ? 'kantor pemerintah dinas instansi' : ($v === 'company' ? 'kantor perusahaan' : 'kantor');
++            return ['kantor', $v, $label, $v === 'government' ? 2 : 1];
++        }
++        if (isset($t['healthcare'])) {
++            return ['kesehatan', $t['healthcare'], 'kesehatan klinik', 1];
++        }
++        if (isset($t['sport'])) {
++            return ['olahraga', $t['sport'], 'olahraga lapangan', 1];
++        }
++        if (isset($t['historic'])) {
++            return ['wisata', $t['historic'], 'sejarah cagar budaya', 1];
++        }
++        if (isset($t['craft'])) {
++            return ['layanan', $t['craft'], 'usaha kerajinan', 0];
++        }
++
++        if ($v = $t['landuse'] ?? null) {
++            $lu = ['commercial' => 'kawasan komersial', 'retail' => 'kawasan pertokoan', 'industrial' => 'kawasan industri pabrik',
++                'education' => 'kawasan pendidikan kampus sekolah', 'religious' => 'kompleks ibadah', 'military' => 'kawasan militer',
++                'cemetery' => 'makam tpu pemakaman'];
++            return ['lainnya', $v, $lu[$v] ?? 'kawasan', 1];
++        }
++
++        $bld = ['university' => ['pendidikan', 'kampus gedung', 2], 'school' => ['pendidikan', 'sekolah gedung', 1],
++            'hospital' => ['kesehatan', 'rumah sakit gedung', 2], 'mosque' => ['ibadah', 'masjid', 1], 'church' => ['ibadah', 'gereja', 1],
++            'apartments' => ['lainnya', 'apartemen', 1], 'hotel' => ['akomodasi', 'hotel', 1], 'retail' => ['belanja', 'toko pertokoan', 1],
++            'office' => ['kantor', 'kantor gedung', 1], 'government' => ['kantor', 'kantor pemerintah gedung', 1]];
++        $v = $t['building'] ?? 'yes';
++        return [$bld[$v][0] ?? 'lainnya', 'building', $bld[$v][1] ?? 'gedung', $bld[$v][2] ?? 0];
+     }
+-}
+ 
++    private function info(string $pesan): void
++    {
++        $this->command?->info($pesan);
++    }
++}
+diff --git a/backend/routes/api.php b/backend/routes/api.php
+index 57258e2..2849b5d 100644
+--- a/backend/routes/api.php
++++ b/backend/routes/api.php
+@@ -4,15 +4,20 @@
+ use App\Http\Controllers\Api\PoiController;
+ use App\Http\Controllers\Api\RekomendasiKoridorController;
+ use App\Http\Controllers\Api\TrayekController;
++use App\Http\Middleware\CacheRespon;
+ use Illuminate\Support\Facades\Route;
+ 
+-Route::get('/trayek', [TrayekController::class, 'trayek']);
+-Route::get('/trayek/{kode}', [TrayekController::class, 'detail']);
+-Route::get('/rute', [TrayekController::class, 'rute']);
+-Route::get('/kepadatan', [TrayekController::class, 'kepadatan']);
+-Route::get('/kepadatan/ringkasan', [TrayekController::class, 'ringkasan']);
++// data statis (trayek, rute, kepadatan, hasil cari tempat) -> di-cache 1 hari + gzip
++Route::middleware(CacheRespon::class . ':1440')->group(function () {
++    Route::get('/trayek', [TrayekController::class, 'trayek']);
++    Route::get('/trayek/{kode}', [TrayekController::class, 'detail']);
++    Route::get('/rute', [TrayekController::class, 'rute']);
++    Route::get('/kepadatan', [TrayekController::class, 'kepadatan']);
++    Route::get('/kepadatan/ringkasan', [TrayekController::class, 'ringkasan']);
++});
++Route::get('/poi', [PoiController::class, 'cari'])->middleware(CacheRespon::class . ':360');
++Route::get('/alamat', [PoiController::class, 'alamat'])->middleware(CacheRespon::class . ':10080');
++
+ Route::get('/rekomendasi', [TrayekController::class, 'rekomendasi']);
+-Route::get('/poi', [PoiController::class, 'cari']);
+ Route::get('/rekomendasi/koridor/{kode}', [RekomendasiKoridorController::class, 'index']);
+ Route::post('/ai/rekomendasi', AiRekomendasiController::class);
+-
+diff --git a/frontend/src/api/naik.js b/frontend/src/api/naik.js
+index b7641f1..ff49715 100644
+--- a/frontend/src/api/naik.js
++++ b/frontend/src/api/naik.js
+@@ -16,7 +16,10 @@ export const api = {
+   rute: (kode) => get('/rute', { kode }),
+   kepadatan: (tingkat) => get('/kepadatan', { tingkat }),
+   ringkasan: () => get('/kepadatan/ringkasan'),
+-  poi: (q) => get('/poi', { q, limit: 8 }),
++  // dekat = [lat, lng] (dibulatkan supaya cache server tetap kena) -> hasil diurutkan dari yang terdekat
++  poi: (q, dekat) => get('/poi', { q, limit: 8, lat: dekat?.[0], lng: dekat?.[1] }),
++  // alamat titik di peta (reverse geocoding); dibulatkan ±1 m
++  alamat: (lat, lng) => get('/alamat', { lat: (+lat).toFixed(5), lng: (+lng).toFixed(5) }),
+   rekomendasi: (asal, tujuan, radius) =>
+     get('/rekomendasi', {
+       asal: `${asal.lat},${asal.lng}`,
+diff --git a/frontend/src/dashboard/beranda/BerandaPanel.jsx b/frontend/src/dashboard/beranda/BerandaPanel.jsx
+index 283246a..35a5978 100644
+--- a/frontend/src/dashboard/beranda/BerandaPanel.jsx
++++ b/frontend/src/dashboard/beranda/BerandaPanel.jsx
+@@ -5,8 +5,7 @@ import L from 'leaflet'
+ import { useDashboard } from '../context'
+ import { BottomSheet, Card, Floating } from '../ui'
+ import { useLayarBesar } from '../hooks'
+-import { IconChevronDown, IconChevronUp, IconLocate, IconX } from '../icons'
+-import { KEPADATAN } from '../warna'
++import { IconChevronDown, IconChevronUp, IconLocate } from '../icons'
+ import { batas, nomor } from '../lib'
+ import RutePopup from '../components/RutePopup'
+ import RuasPopup from '../components/RuasPopup'
+@@ -35,10 +34,15 @@ export default function BerandaPanel() {
+   const toggle = (kode) => setFilter((f) => ({ ...f, kode: f.kode.includes(kode) ? f.kode.filter((k) => k !== kode) : [...f.kode, kode] }))
+   const hapus = () => setFilter((f) => ({ ...f, kode: [] }))
+   const pilihSemua = () => setFilter((f) => ({ ...f, kode: (trayek.data ?? []).map((t) => t.kode_trayek) }))
+-  const [infoTutup, setInfoTutup] = useState(false) // desktop: panel info kepadatan ditutup
++  const [infoTutup, setInfoTutup] = useState(false) // desktop: panel info kepadatan diciutkan
+ 
+   useEffect(() => {
+-    if (layers.jalan || layers.kepadatan) butuhKepadatan()
++    if (layers.jalan || layers.kepadatan) return butuhKepadatan()
++    // muat data kepadatan diam-diam saat browser senggang, jadi saat pindah ke Kepadatan sudah siap
++    const idle = window.requestIdleCallback ?? ((f) => setTimeout(f, 1500))
++    const batal = window.cancelIdleCallback ?? clearTimeout
++    const id = idle(() => butuhKepadatan())
++    return () => batal(id)
+   }, [layers.jalan, layers.kepadatan, butuhKepadatan])
+ 
+   const ruteTampil = useMemo(() => {
+@@ -108,35 +112,21 @@ export default function BerandaPanel() {
+             </Card>
+           </Floating>
+           <Floating className="top-3 right-3">{tombolLayer}</Floating>
+-          {layers.kepadatan &&
+-            (infoTutup ? (
+-              <Floating className="top-[76px] right-3">
++          {layers.kepadatan && (
++            <Floating className="top-[76px] right-3 flex max-h-[calc(100%-292px)] w-[340px] flex-col">
++              <Card className="naik-scroll relative min-h-0 overflow-y-auto !rounded-[24px] px-5 py-4">
+                 <button
+-                  onClick={() => setInfoTutup(false)}
+-                  className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-4 text-[14px] font-semibold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.14)] hover:bg-[#F6F9F9]"
++                  onClick={() => setInfoTutup((x) => !x)}
++                  aria-label={infoTutup ? 'Buka info kepadatan' : 'Ciutkan info kepadatan'}
++                  aria-expanded={!infoTutup}
++                  className="absolute top-3 right-3 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/55 transition hover:bg-mist hover:text-dark"
+                 >
+-                  <span className="flex gap-0.5">
+-                    {KEPADATAN.map((k) => (
+-                      <span key={k.key} className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: k.warna }} />
+-                    ))}
+-                  </span>
+-                  Info kepadatan
++                  {infoTutup ? <IconChevronDown className="h-4 w-4" /> : <IconChevronUp className="h-4 w-4" />}
+                 </button>
+-              </Floating>
+-            ) : (
+-              <Floating className="top-[76px] right-3 flex max-h-[calc(100%-292px)] w-[340px] flex-col">
+-                <Card className="naik-scroll relative min-h-0 overflow-y-auto !rounded-[24px] px-5 py-4">
+-                  <button
+-                    onClick={() => setInfoTutup(true)}
+-                    aria-label="Tutup info kepadatan"
+-                    className="absolute top-3 right-3 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/50 transition hover:bg-mist hover:text-dark"
+-                  >
+-                    <IconX className="h-4 w-4" />
+-                  </button>
+-                  {info()}
+-                </Card>
+-              </Floating>
+-            ))}
++                {info({ ringkas: infoTutup })}
++              </Card>
++            </Floating>
++          )}
+         </>
+       ) : (
+         <>
+diff --git a/frontend/src/dashboard/beranda/CariTujuan.jsx b/frontend/src/dashboard/beranda/CariTujuan.jsx
+index dc61db1..ebc9a89 100644
+--- a/frontend/src/dashboard/beranda/CariTujuan.jsx
++++ b/frontend/src/dashboard/beranda/CariTujuan.jsx
+@@ -1,9 +1,9 @@
+ import { useMemo, useRef, useState } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ import { TEMPAT } from '../../data/tempat'
+-import { useCariTempat } from '../hooks'
++import { saranAwal, tempatSaya, useCariTempat, usePusatPeta, useTempatSaya } from '../hooks'
+ import { ItemTempat } from '../components/KolomTempat'
+-import { IconMap, IconSearch, IconX } from '../icons'
++import { IconSearch, IconX } from '../icons'
+ import { nomor } from '../lib'
+ 
+ const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+@@ -16,28 +16,40 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
+   const [aktif, setAktif] = useState(0)
+   const inputRef = useRef(null)
+ 
+-  const cariTempat = useCariTempat(q)
++  const dekat = usePusatPeta()
++  const saya = useTempatSaya()
++  const cariTempat = useCariTempat(q, dekat)
+   const saran = useMemo(() => {
+     const k = norm(q.trim())
+-    const tempat = (k ? cariTempat.hasil.slice(0, 7) : TEMPAT.slice(0, 5)).map((t) => ({ jenis: 'tempat', t }))
+-    const rute = k
+-      ? (trayek.data ?? [])
+-          .filter((t) => nomor(t.kode_trayek).includes(k.replace(/^0+(?=\d)/, '')) || norm(t.nama_trayek).includes(k))
+-          .slice(0, 5)
+-          .map((t) => ({ jenis: 'rute', t }))
+-      : []
++    if (k.length < 2) {
++      const awal = saranAwal(saya).map((x) => ({ ...x, jenis: 'tempat' }))
++      const populer =
++        saya.riwayat.length < 3
++          ? TEMPAT.filter((t) => !saya.riwayat.some((r) => r.nama === t.nama))
++              .slice(0, 5)
++              .map((t) => ({ jenis: 'tempat', peran: 'populer', t }))
++          : []
++      return [...awal, ...populer, { jenis: 'peta' }]
++    }
++    const tempat = cariTempat.hasil.slice(0, 7).map((t) => ({ jenis: 'tempat', peran: 'hasil', t }))
++    const rute = (trayek.data ?? [])
++      .filter((t) => nomor(t.kode_trayek).includes(k.replace(/^0+(?=\d)/, '')) || norm(t.nama_trayek).includes(k))
++      .slice(0, 5)
++      .map((t) => ({ jenis: 'rute', t }))
+     return [...tempat, ...rute, { jenis: 'peta' }]
+-  }, [q, trayek.data, cariTempat.hasil])
++  }, [q, trayek.data, cariTempat.hasil, saya])
+ 
+   function pilih(s) {
+     setBuka(false)
+     inputRef.current?.blur()
+-    if (s.jenis === 'tempat') navigate(`/cari?ke=${s.t.lat},${s.t.lng}&nama=${encodeURIComponent(s.t.nama)}`)
+-    // (tempat bisa dari daftar NAIK, database POI, atau OpenStreetMap)
+-    else if (s.jenis === 'rute') {
++    if (s.jenis === 'tempat') {
++      tempatSaya.tambahRiwayat(s.t)
++      const ket = s.t.ket ? `&ket=${encodeURIComponent(s.t.ket)}` : ''
++      navigate(`/cari?ke=${s.t.lat},${s.t.lng}&nama=${encodeURIComponent(s.t.nama)}${ket}`)
++    } else if (s.jenis === 'rute') {
+       onPilihRute(s.t.kode_trayek)
+       setQ('')
+-    } else navigate('/cari')
++    } else navigate('/cari?pin=tujuan')
+   }
+ 
+   function tombol(e) {
+@@ -86,18 +98,24 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
+ 
+       {buka && (
+         <div id="naik-saran" role="listbox" className="naik-scroll absolute top-[60px] right-0 left-0 z-10 max-h-[60dvh] overflow-y-auto rounded-2xl bg-white py-2 shadow-[0_12px_36px_rgba(21,30,44,0.18)]">
+-          {adaTempat && <p className="px-4 pt-1 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">{q ? 'Tempat' : 'Tujuan populer'}</p>}
++          {q.trim().length >= 2 && adaTempat && <p className="px-4 pt-1 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">Tempat</p>}
+           {q.trim().length >= 2 && cariTempat.loading && !adaTempat && <p className="px-4 pt-1 pb-2 text-[13px] text-dark/50">Mencari tempat…</p>}
+-          {cariTempat.siap && !adaTempat && !adaRute && <p className="px-4 pt-1 pb-2 text-[13px] text-dark/55">Tempat tidak ditemukan. Coba kata lain, atau pilih titiknya langsung di peta.</p>}
++          {cariTempat.gagal && <p className="px-4 pt-1 pb-2 text-[13px] text-red-700">Pencarian tempat gagal (backend / internet). Pilih titiknya langsung di peta dulu ya.</p>}
++          {cariTempat.siap && !cariTempat.gagal && !adaTempat && !adaRute && <p className="px-4 pt-1 pb-2 text-[13px] text-dark/55">Tempat tidak ditemukan. Coba kata lain, atau pilih titiknya langsung di peta.</p>}
+           {saran.map((s, i) => {
+             const kelas = `flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${i === aktif ? 'bg-[#EEF6F3]' : 'hover:bg-[#F6F9F9]'}`
+             const judulRute = s.jenis === 'rute' && saran[i - 1]?.jenis !== 'rute'
+             return (
+-              <div key={s.jenis === 'peta' ? 'peta' : `${s.jenis}-${s.t.nama ?? s.t.kode_trayek}`}>
++              <div key={s.jenis === 'peta' ? 'peta' : `${s.jenis}-${s.peran ?? ''}-${s.t.nama ?? s.t.kode_trayek}-${s.t.lat ?? ''}`}>
++                {q.trim().length < 2 && s.peran && s.peran !== saran[i - 1]?.peran && (s.peran === 'populer' || !['rumah', 'kampus', 'riwayat'].includes(saran[i - 1]?.peran)) && (
++                  <p className="px-4 pt-1.5 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">{s.peran === 'populer' ? 'Tujuan populer' : 'Tersimpan & terakhir'}</p>
++                )}
+                 {judulRute && <p className="mt-1 border-t border-[#EDF1F2] px-4 pt-2.5 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">Rute angkot</p>}
+                 {s.jenis === 'peta' && (adaTempat || adaRute) && <div className="my-1 border-t border-[#EDF1F2]" />}
+-                {s.jenis === 'tempat' ? (
+-                  <ItemTempat t={s.t} aktif={i === aktif} onClick={() => pilih(s)} onMouseEnter={() => setAktif(i)} />
++                {s.jenis === 'peta' ? (
++                  <ItemTempat peran="peta" judul="Pilih lewat peta" aktif={i === aktif} onClick={() => pilih(s)} onMouseEnter={() => setAktif(i)} />
++                ) : s.jenis === 'tempat' ? (
++                  <ItemTempat t={s.t} peran={s.peran} judul={s.judul} aktif={i === aktif} onClick={() => pilih(s)} onMouseEnter={() => setAktif(i)} />
+                 ) : (
+                   <button type="button" role="option" aria-selected={i === aktif} onMouseDown={(e) => e.preventDefault()} onClick={() => pilih(s)} onMouseEnter={() => setAktif(i)} className={kelas}>
+                     {s.jenis === 'rute' ? (
+@@ -107,14 +125,7 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
+                         </span>
+                         <span className="min-w-0 flex-1 truncate text-[14.5px] font-medium text-dark">{s.t.nama_trayek}</span>
+                       </>
+-                    ) : (
+-                      <>
+-                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#E3F4EC] text-primary">
+-                          <IconMap className="h-[18px] w-[18px]" />
+-                        </span>
+-                        <span className="min-w-0 flex-1 text-[14.5px] font-medium text-primary">Pilih titik di peta</span>
+-                      </>
+-                    )}
++                    ) : null}
+                   </button>
+                 )}
+               </div>
+diff --git a/frontend/src/dashboard/cari/CariPanel.jsx b/frontend/src/dashboard/cari/CariPanel.jsx
+index 6129326..dddb1d2 100644
+--- a/frontend/src/dashboard/cari/CariPanel.jsx
++++ b/frontend/src/dashboard/cari/CariPanel.jsx
+@@ -4,10 +4,12 @@ import { CircleMarker, GeoJSON, Polyline, Tooltip, useMap, useMapEvents } from '
+ import L from 'leaflet'
+ import { api } from '../../api/naik'
+ import KolomTempat from '../components/KolomTempat'
++import PinPeta from './PinPeta'
++import { tempatSaya, useTempatSaya } from '../hooks'
+ import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
+ import { useDashboard } from '../context'
+ import { Card, CardHeader, Floating, KodeBadge as Badge, PrimaryButton } from '../ui'
+-import { IconSearch } from '../icons'
++import { IconCap, IconHome, IconMap, IconSearch } from '../icons'
+ 
+ const KodeBadge = (p) => <Badge size="sm" {...p} />
+ 
+@@ -53,17 +55,23 @@ export default function CariPanel() {
+   const [hasil, setHasil] = useState({ data: null, loading: false, error: null })
+   const [pilih, setPilih] = useState(null) // {jenis:'langsung'|'transfer', i}
+   const [lokasiErr, setLokasiErr] = useState('')
++  const [pin, setPin] = useState(null) // 'asal' | 'tujuan' saat memilih lewat pin geser
+ 
+   // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, coba lokasi saya sebagai asal, lalu cari otomatis
+   const [params] = useSearchParams()
+   const otomatis = useRef(false)
+   useEffect(() => {
+     const ke = params.get('ke')?.split(',').map(Number)
+-    if (!ke || ke.length !== 2 || ke.some((x) => !Number.isFinite(x))) return
+-    setTitik('tujuan', { lat: ke[0], lng: ke[1], nama: params.get('nama') || 'Tujuan' })
+-    setMode('asal')
+-    otomatis.current = true
+-    lokasiSaya()
++    if (ke && ke.length === 2 && ke.every(Number.isFinite)) {
++      setTitik('tujuan', { lat: ke[0], lng: ke[1], nama: params.get('nama') || 'Tujuan', ket: params.get('ket') })
++      setMode('asal')
++      otomatis.current = true
++      lokasiSaya()
++      return
++    }
++    if (params.get('pin') === 'tujuan' || params.get('pin') === 'asal') setPin(params.get('pin'))
++    // asal otomatis = lokasi saya (diam-diam; kalau ditolak, pengguna isi sendiri)
++    if (!asal) lokasiSaya({ diam: true })
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [params])
+   useEffect(() => {
+@@ -81,21 +89,41 @@ export default function CariPanel() {
+     setPilih(null)
+   }
+ 
++  // isi nama & alamat titik dari server (reverse geocoding), hanya kalau titiknya belum diganti
++  function isiAlamat(jenis, t, ganti = true) {
++    api
++      .alamat(t.lat, t.lng)
++      .then((a) => {
++        const set = jenis === 'asal' ? setAsal : setTujuan
++        set((cur) => (cur && cur.lat === t.lat && cur.lng === t.lng ? { ...cur, nama: ganti ? a.nama : cur.nama, ket: a.ket } : cur))
++      })
++      .catch(() => {})
++  }
++
+   function klikPeta(latlng) {
+-    const t = { lat: +latlng.lat.toFixed(6), lng: +latlng.lng.toFixed(6), nama: 'Titik di peta' }
++    const t = { lat: +latlng.lat.toFixed(6), lng: +latlng.lng.toFixed(6), nama: 'Memuat alamat…' }
+     setTitik(mode, t)
++    isiAlamat(mode, t)
+     if (mode === 'asal' && !tujuan) setMode('tujuan')
+   }
+ 
+-  function lokasiSaya() {
++  function pilihTempat(jenis, t) {
++    setTitik(jenis, t)
++    tempatSaya.tambahRiwayat(t)
++    if (jenis === 'asal' && !tujuan) setMode('tujuan')
++  }
++
++  function lokasiSaya({ diam = false } = {}) {
+     setLokasiErr('')
+-    if (!navigator.geolocation) return setLokasiErr('Browser tidak mendukung lokasi.')
++    if (!navigator.geolocation) return !diam && setLokasiErr('Browser tidak mendukung lokasi.')
+     navigator.geolocation.getCurrentPosition(
+       (p) => {
+-        setTitik('asal', { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), nama: 'Lokasi saya' })
++        const t = { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), nama: 'Lokasi saya' }
++        setTitik('asal', t)
++        isiAlamat('asal', t, false)
+         setMode('tujuan')
+       },
+-      () => setLokasiErr('Izin lokasi ditolak / tidak tersedia.'),
++      () => !diam && setLokasiErr('Izin lokasi ditolak / tidak tersedia. Ketik atau pilih lewat peta ya.'),
+       { enableHighAccuracy: true, timeout: 10000 },
+     )
+   }
+@@ -129,19 +157,14 @@ export default function CariPanel() {
+       <div className="px-5 pt-4 pb-5 lg:px-6">
+         <TitikInput
+           label="Dari"
++          slot="asal"
+           warna={WARNA_ASAL}
+           titik={asal}
+           aktif={mode === 'asal'}
+           onAktif={() => setMode('asal')}
+-          onPilih={(t) => {
+-            setTitik('asal', t)
+-            if (!tujuan) setMode('tujuan')
+-          }}
+-          extra={
+-            <button onClick={lokasiSaya} className="text-xs font-semibold text-primary hover:underline">
+-              Pakai lokasi saya
+-            </button>
+-          }
++          onPilih={(t) => pilihTempat('asal', t)}
++          onLokasiSaya={() => lokasiSaya()}
++          onPilihPeta={() => setPin('asal')}
+         />
+         <div className="my-2 flex justify-center">
+           <button
+@@ -155,11 +178,13 @@ export default function CariPanel() {
+         </div>
+         <TitikInput
+           label="Ke"
++          slot="tujuan"
+           warna={WARNA_TUJUAN}
+           titik={tujuan}
+           aktif={mode === 'tujuan'}
+           onAktif={() => setMode('tujuan')}
+-          onPilih={(t) => setTitik('tujuan', t)}
++          onPilih={(t) => pilihTempat('tujuan', t)}
++          onPilihPeta={() => setPin('tujuan')}
+         />
+         {lokasiErr && <p className="mt-2 text-xs text-red-700">{lokasiErr}</p>}
+ 
+@@ -181,7 +206,7 @@ export default function CariPanel() {
+         </PrimaryButton>
+         {(!asal || !tujuan) && (
+           <p className="mt-2 text-center text-xs text-dark/50">
+-            Ketik nama tempat, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
++            Ketik nama tempat, pilih lewat peta, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
+           </p>
+         )}
+       </div>
+@@ -200,6 +225,26 @@ export default function CariPanel() {
+     ? [asal, tujuan].map((t) => [t.lat, t.lng]).concat(garisOpsi(opsi).flat())
+     : [asal, tujuan].filter(Boolean).map((t) => [t.lat, t.lng])
+ 
++  if (pin) {
++    const awal = (pin === 'asal' ? asal : tujuan) ?? (pin === 'tujuan' ? asal : tujuan)
++    return (
++      <>
++        {pin !== 'asal' && asal && <Penanda titik={asal} warna={WARNA_ASAL} label="Asal" />}
++        {pin !== 'tujuan' && tujuan && <Penanda titik={tujuan} warna={WARNA_TUJUAN} label="Tujuan" />}
++        <PinPeta
++          label={pin}
++          warna={pin === 'asal' ? WARNA_ASAL : WARNA_TUJUAN}
++          awal={awal}
++          onBatal={() => setPin(null)}
++          onPilih={(t) => {
++            pilihTempat(pin, t)
++            setPin(null)
++          }}
++        />
++      </>
++    )
++  }
++
+   return (
+     <>
+       <Floating className="top-3 left-3 right-3 flex max-h-[calc(58%-12px)] flex-col lg:right-auto lg:bottom-3 lg:left-[94px] lg:max-h-none lg:w-[360px]">
+@@ -221,7 +266,14 @@ export default function CariPanel() {
+ 
+ }
+ 
+-function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, extra }) {
++const SLOT_SIMPAN = [
++  { key: 'rumah', label: 'Rumah', Ikon: IconHome },
++  { key: 'kampus', label: 'Kampus', Ikon: IconCap },
++]
++
++function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, onLokasiSaya, onPilihPeta }) {
++  const saya = useTempatSaya()
++  const bisaSimpan = titik && titik.nama !== 'Memuat alamat…'
+   return (
+     <div className={`rounded-xl border p-3 transition ${aktif ? 'border-primary ring-2 ring-primary/15' : 'border-border-nav'}`}>
+       <div className="mb-2 flex items-center justify-between">
+@@ -229,12 +281,36 @@ function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, extra }) {
+           <span className="h-3 w-3 rounded-full" style={{ backgroundColor: warna }} />
+           {label}
+         </span>
+-        {extra}
++        <button onClick={onPilihPeta} className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
++          <IconMap className="h-3.5 w-3.5" /> Pilih lewat peta
++        </button>
+       </div>
+-      <KolomTempat titik={titik} onPilih={onPilih} onFocus={onAktif} placeholder={label === 'Dari' ? 'Dari mana? (ketik / klik peta)' : 'Mau ke mana? (ketik / klik peta)'} />
+-      <button onClick={onAktif} className={`mt-2 text-xs font-semibold ${aktif ? 'text-primary' : 'text-dark/60 hover:text-primary'}`}>
+-        {aktif ? '● Klik peta untuk memilih titik' : 'Pilih di peta'}
+-      </button>
++      <KolomTempat
++        titik={titik}
++        onPilih={onPilih}
++        onFocus={onAktif}
++        onLokasiSaya={onLokasiSaya}
++        onPilihPeta={onPilihPeta}
++        placeholder={label === 'Dari' ? 'Dari mana?' : 'Mau ke mana?'}
++      />
++      {bisaSimpan && (
++        <div className="mt-2 flex flex-wrap items-center gap-1.5">
++          <span className="text-[11.5px] text-dark/45">Simpan sebagai</span>
++          {SLOT_SIMPAN.map(({ key, label: l, Ikon }) => {
++            const tersimpan = tempatSaya.sama(saya[key], titik)
++            return (
++              <button
++                key={key}
++                onClick={() => tempatSaya.atur(key, tersimpan ? null : titik)}
++                aria-pressed={tersimpan}
++                className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold transition ${tersimpan ? 'bg-primary text-white' : 'bg-[#F1F4F5] text-dark/65 hover:bg-mist'}`}
++              >
++                <Ikon className="h-3.5 w-3.5" /> {l}
++              </button>
++            )
++          })}
++        </div>
++      )}
+     </div>
+   )
+ }
+diff --git a/frontend/src/dashboard/cari/PinPeta.jsx b/frontend/src/dashboard/cari/PinPeta.jsx
+new file mode 100644
+index 0000000..f5e5f36
+--- /dev/null
++++ b/frontend/src/dashboard/cari/PinPeta.jsx
+@@ -0,0 +1,114 @@
++import { useEffect, useRef, useState } from 'react'
++import { useMap, useMapEvents } from 'react-leaflet'
++import { api } from '../../api/naik'
++import { Card, Floating, PrimaryButton } from '../ui'
++import { IconLocate } from '../icons'
++
++// Pin diam di tengah layar; pengguna menggeser peta (ala ojol). Alamat titik muncul otomatis.
++export default function PinPeta({ label, warna, awal, onBatal, onPilih }) {
++  const map = useMap()
++  const [geser, setGeser] = useState(false)
++  const [pusat, setPusat] = useState(() => {
++    const c = awal ? { lat: awal.lat, lng: awal.lng } : map.getCenter()
++    return { lat: c.lat, lng: c.lng }
++  })
++  const [alamat, setAlamat] = useState({ kunci: '', data: null, gagal: false })
++  const kunci = `${pusat.lat.toFixed(5)},${pusat.lng.toFixed(5)}`
++
++  // mulai dari titik lama (kalau ada) dan cukup dekat supaya pin mudah ditempatkan
++  const mulai = useRef(false)
++  useEffect(() => {
++    if (mulai.current) return
++    mulai.current = true
++    map.setView([pusat.lat, pusat.lng], Math.max(map.getZoom(), 17), { animate: false })
++  }, [map, pusat])
++
++  useMapEvents({
++    movestart: () => setGeser(true),
++    moveend: () => {
++      const c = map.getCenter()
++      setGeser(false)
++      setPusat({ lat: c.lat, lng: c.lng })
++    },
++    click: (e) => map.panTo(e.latlng), // ketuk peta = pindahkan pin ke situ
++  })
++
++  // ambil alamat setelah peta berhenti digeser
++  useEffect(() => {
++    if (geser) return
++    let batal = false
++    const t = setTimeout(() => {
++      api
++        .alamat(pusat.lat, pusat.lng)
++        .then((d) => !batal && setAlamat({ kunci, data: d, gagal: false }))
++        .catch(() => !batal && setAlamat({ kunci, data: null, gagal: true }))
++    }, 450)
++    return () => {
++      batal = true
++      clearTimeout(t)
++    }
++  }, [kunci, geser, pusat.lat, pusat.lng])
++
++  const siap = !geser && alamat.kunci === kunci
++  const nama = siap ? (alamat.data?.nama ?? 'Titik di peta') : null
++  const ket = siap ? (alamat.data?.ket ?? (alamat.gagal ? 'Alamat tidak bisa dimuat — titik tetap bisa dipakai' : null)) : null
++
++  return (
++    <>
++      {/* pin di tengah (ujung bawah pin = titik yang dipilih) */}
++      <div className="pointer-events-none absolute top-1/2 left-1/2 z-[1000] -translate-x-1/2 -translate-y-full">
++        <div className={`transition-transform duration-150 ${geser ? '-translate-y-3' : ''}`}>
++          <svg width="44" height="56" viewBox="0 0 44 56" aria-hidden="true">
++            <path d="M22 2C11 2 3 10.3 3 20.6 3 34.4 22 54 22 54s19-19.6 19-33.4C41 10.3 33 2 22 2Z" fill={warna} stroke="#fff" strokeWidth="3" />
++            <circle cx="22" cy="20.5" r="7" fill="#fff" />
++          </svg>
++        </div>
++      </div>
++      <div className={`pointer-events-none absolute top-1/2 left-1/2 z-[999] h-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/25 blur-[1px] transition-all ${geser ? 'w-3 opacity-60' : 'w-4'}`} />
++
++      <Floating className="right-3 bottom-[88px] left-3 lg:right-auto lg:bottom-5 lg:left-1/2 lg:w-[440px] lg:-translate-x-1/2">
++        <Card className="px-5 pt-4 pb-5">
++          <div className="flex items-center justify-between gap-3">
++            <p className="flex items-center gap-2 text-[12px] font-bold tracking-wide text-dark/55 uppercase">
++              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: warna }} />
++              Pilih lokasi {label}
++            </p>
++            <button
++              onClick={() => map.locate({ setView: true, maxZoom: 17 })}
++              className="inline-flex items-center gap-1.5 rounded-full bg-[#F1F4F5] px-3 py-1.5 text-[12.5px] font-semibold text-dark/70 hover:bg-mist"
++            >
++              <IconLocate className="h-3.5 w-3.5" /> Lokasi saya
++            </button>
++          </div>
++
++          <div className="mt-3 min-h-[52px]">
++            {nama ? (
++              <>
++                <p className="font-display text-[17px] leading-snug font-bold text-tentang-dark">{nama}</p>
++                {ket && <p className="mt-0.5 text-[13px] leading-snug text-dark/55">{ket}</p>}
++              </>
++            ) : (
++              <div className="animate-pulse space-y-2 pt-1">
++                <div className="h-4 w-2/3 rounded bg-[#E9EEF0]" />
++                <div className="h-3 w-1/2 rounded bg-[#EEF2F3]" />
++              </div>
++            )}
++          </div>
++          <p className="mt-2 text-[12px] text-dark/45">Geser peta (atau ketuk) untuk menaruh pin tepat di lokasi.</p>
++
++          <div className="mt-4 grid grid-cols-[auto_1fr] gap-2">
++            <button onClick={onBatal} className="h-12 rounded-2xl border border-[#E3E8EA] px-5 text-[14.5px] font-semibold text-dark/70 hover:bg-[#F6F9F9]">
++              Batal
++            </button>
++            <PrimaryButton
++              disabled={!siap}
++              onClick={() => onPilih({ lat: +pusat.lat.toFixed(6), lng: +pusat.lng.toFixed(6), nama: nama ?? 'Titik di peta', ket: alamat.data?.ket ?? null })}
++            >
++              Pilih lokasi ini
++            </PrimaryButton>
++          </div>
++        </Card>
++      </Floating>
++    </>
++  )
++}
+diff --git a/frontend/src/dashboard/components/KolomTempat.jsx b/frontend/src/dashboard/components/KolomTempat.jsx
+index e6f5f2c..d79196f 100644
+--- a/frontend/src/dashboard/components/KolomTempat.jsx
++++ b/frontend/src/dashboard/components/KolomTempat.jsx
+@@ -1,9 +1,28 @@
+ import { useRef, useState } from 'react'
+-import { useCariTempat } from '../hooks'
+-import { IconPin, IconX } from '../icons'
++import { saranAwal, teksJarak, useCariTempat, usePusatPeta, useTempatSaya } from '../hooks'
++import { IconCap, IconClock, IconHome, IconLocate, IconMap, IconPin, IconSignpost, IconX } from '../icons'
+ 
+-// Satu baris hasil tempat (dipakai dropdown Beranda & menu Cari).
+-export function ItemTempat({ t, aktif, ...p }) {
++// ikon + warna per jenis hasil
++const GAYA = {
++  rumah: { Ikon: IconHome, bg: '#E3F4EC', fg: '#1A936F' },
++  kampus: { Ikon: IconCap, bg: '#E8EEFB', fg: '#3475C4' },
++  riwayat: { Ikon: IconClock, bg: '#F1F4F5', fg: '#5B6B70' },
++  lokasi: { Ikon: IconLocate, bg: '#E1F3FB', fg: '#0284C7' },
++  peta: { Ikon: IconMap, bg: '#E3F4EC', fg: '#1A936F' },
++  jalan: { Ikon: IconSignpost, bg: '#EEF1F6', fg: '#56657A' },
++  kelurahan: { Ikon: IconMap, bg: '#F0ECFA', fg: '#7C60BD' },
++  kecamatan: { Ikon: IconMap, bg: '#F0ECFA', fg: '#7C60BD' },
++  wilayah: { Ikon: IconMap, bg: '#F0ECFA', fg: '#7C60BD' },
++  perumahan: { Ikon: IconHome, bg: '#FBEFE6', fg: '#B2580B' },
++}
++const GAYA_TEMPAT = { Ikon: IconPin, bg: '#FFF3E0', fg: '#E58A12' }
++const SIMPAN = new Set(['rumah', 'kampus', 'riwayat'])
++
++// Satu baris saran (tempat, jalan, riwayat, Rumah/Kampus, "lokasi saya", "pilih di peta").
++export function ItemTempat({ t, peran, aktif, judul, ...p }) {
++  const g = GAYA[peran] ?? GAYA[t?.jenis] ?? GAYA_TEMPAT
++  const teksJudul = judul ?? t?.nama
++  const sub = peran === 'rumah' || peran === 'kampus' ? t?.nama : t?.ket
+   return (
+     <button
+       type="button"
+@@ -13,30 +32,43 @@ export function ItemTempat({ t, aktif, ...p }) {
+       className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${aktif ? 'bg-[#EEF6F3]' : 'hover:bg-[#F6F9F9]'}`}
+       {...p}
+     >
+-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#FFF3E0] text-[#E58A12]">
+-        <IconPin className="h-[18px] w-[18px]" />
++      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: g.bg, color: g.fg }}>
++        <g.Ikon className="h-[18px] w-[18px]" />
+       </span>
+       <span className="min-w-0 flex-1">
+-        <span className="block truncate text-[14.5px] font-medium text-dark">{t.nama}</span>
+-        {t.ket && <span className="block truncate text-[12px] text-dark/50">{t.ket}</span>}
++        <span className={`block truncate text-[14.5px] font-medium ${peran === 'peta' || peran === 'lokasi' ? 'text-primary' : 'text-dark'}`}>{teksJudul}</span>
++        {sub && <span className="block truncate text-[12px] text-dark/50">{sub}</span>}
+       </span>
++      {t?.jarak_m != null && <span className="shrink-0 text-[11.5px] font-medium text-dark/45">{teksJarak(t.jarak_m)}</span>}
+     </button>
+   )
+ }
+ 
+-// Kolom ketik tempat (Dari / Ke) dengan saran (daftar ikut mengalir di dalam panel, jadi tidak terpotong di HP): tempat NAIK + POI database + OpenStreetMap.
+-export default function KolomTempat({ titik, onPilih, onFocus, placeholder = 'Ketik nama tempat…' }) {
++// Kolom ketik tempat (Dari / Ke) ala aplikasi ojol: riwayat & Rumah/Kampus saat kosong, hasil terdekat saat mengetik.
++export default function KolomTempat({ titik, onPilih, onFocus, onLokasiSaya, onPilihPeta, placeholder = 'Ketik nama tempat…' }) {
+   const [q, setQ] = useState('')
+   const [buka, setBuka] = useState(false)
+   const [aktif, setAktif] = useState(0)
+   const ref = useRef(null)
+-  const { hasil, loading, siap } = useCariTempat(q)
++  const dekat = usePusatPeta()
++  const saya = useTempatSaya()
++  const { hasil, loading, siap, gagal } = useCariTempat(q, dekat)
++  const mengetik = q.trim().length >= 2
++
++  const item = [
++    ...(mengetik ? hasil.map((t) => ({ peran: 'hasil', t })) : []),
++    ...(!mengetik && onLokasiSaya ? [{ peran: 'lokasi', judul: 'Lokasi saya sekarang' }] : []),
++    ...(!mengetik ? saranAwal(saya) : []),
++    ...(onPilihPeta ? [{ peran: 'peta', judul: 'Pilih lewat peta' }] : []),
++  ]
+ 
+-  function pilih(t) {
+-    onPilih({ lat: t.lat, lng: t.lng, nama: t.nama })
++  function pilih(x) {
+     setQ('')
+     setBuka(false)
+     ref.current?.blur()
++    if (x.peran === 'lokasi') return onLokasiSaya()
++    if (x.peran === 'peta') return onPilihPeta()
++    onPilih({ lat: x.t.lat, lng: x.t.lng, nama: x.t.nama, ket: x.t.ket ?? null })
+   }
+ 
+   return (
+@@ -57,9 +89,9 @@ export default function KolomTempat({ titik, onPilih, onFocus, placeholder = 'Ke
+           }}
+           onBlur={() => setTimeout(() => setBuka(false), 150)}
+           onKeyDown={(e) => {
+-            if (e.key === 'ArrowDown') setAktif((i) => Math.min(i + 1, hasil.length - 1))
++            if (e.key === 'ArrowDown') setAktif((i) => Math.min(i + 1, item.length - 1))
+             else if (e.key === 'ArrowUp') setAktif((i) => Math.max(i - 1, 0))
+-            else if (e.key === 'Enter' && hasil[aktif]) pilih(hasil[aktif])
++            else if (e.key === 'Enter' && item[aktif]) pilih(item[aktif])
+             else if (e.key === 'Escape') ref.current?.blur()
+             else return
+             e.preventDefault()
+@@ -73,13 +105,27 @@ export default function KolomTempat({ titik, onPilih, onFocus, placeholder = 'Ke
+           </button>
+         )}
+       </div>
+-      {buka && q.trim().length >= 2 && (
+-        <div role="listbox" className="naik-scroll mt-1.5 max-h-60 overflow-y-auto rounded-2xl border border-[#E3E8EA] bg-white py-1.5">
+-          {hasil.map((t, i) => (
+-            <ItemTempat key={`${t.nama}-${t.lat}`} t={t} aktif={i === aktif} onClick={() => pilih(t)} onMouseEnter={() => setAktif(i)} />
++      {!buka && titik?.ket && <p className="mt-1 truncate px-1 text-[12px] text-dark/50">{titik.ket}</p>}
++      {buka && item.length > 0 && (
++        <div role="listbox" className="naik-scroll mt-1.5 max-h-72 overflow-y-auto rounded-2xl border border-[#E3E8EA] bg-white py-1.5">
++          {mengetik && loading && !hasil.length && <p className="px-4 py-2 text-[13px] text-dark/50">Mencari tempat…</p>}
++          {mengetik && gagal && <p className="px-4 py-2 text-[13px] text-red-700">Pencarian gagal (backend / internet). Pilih lewat peta dulu ya.</p>}
++          {mengetik && siap && !gagal && !hasil.length && <p className="px-4 py-2 text-[13px] text-dark/55">Tempat tidak ditemukan. Coba kata lain, atau pilih lewat peta.</p>}
++          {item.map((x, i) => (
++            <div key={`${x.peran}-${x.t?.nama ?? x.judul}-${x.t?.lat ?? i}`}>
++              {!mengetik && SIMPAN.has(x.peran) && !SIMPAN.has(item[i - 1]?.peran) && (
++                <p className="px-4 pt-2 pb-1 text-[11px] font-semibold tracking-wide text-dark/40 uppercase">Tersimpan & terakhir</p>
++              )}
++              <ItemTempat
++                t={x.t}
++                peran={x.peran}
++                judul={x.judul}
++                aktif={i === aktif}
++                onClick={() => pilih(x)}
++                onMouseEnter={() => setAktif(i)}
++              />
++            </div>
+           ))}
+-          {loading && <p className="px-4 py-2 text-[13px] text-dark/50">Mencari tempat…</p>}
+-          {siap && !hasil.length && <p className="px-4 py-2 text-[13px] text-dark/55">Tempat tidak ditemukan. Coba kata lain, atau klik langsung di peta.</p>}
+         </div>
+       )}
+     </div>
+diff --git a/frontend/src/dashboard/hooks.js b/frontend/src/dashboard/hooks.js
+index f877ac7..dee04d0 100644
+--- a/frontend/src/dashboard/hooks.js
++++ b/frontend/src/dashboard/hooks.js
+@@ -1,4 +1,5 @@
+ import { useEffect, useState } from 'react'
++import { useMap } from 'react-leaflet'
+ import { api } from '../api/naik'
+ import { TEMPAT } from '../data/tempat'
+ 
+@@ -15,15 +16,25 @@ export function useLayarBesar() {
+   return besar
+ }
+ 
+-// ---------- pencarian tempat bebas ----------
++// ---------- pencarian tempat ----------
+ 
+ const BBOX_BOGOR = '106.70,-6.70,106.90,-6.48' // minLon,minLat,maxLon,maxLat (Kota Bogor + pinggiran)
+-const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()
++const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+ 
+-// Photon (pencarian OpenStreetMap yang memang dibuat untuk ketik-langsung-muncul), dibatasi area Bogor.
+-async function cariOsm(q, signal) {
+-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&bbox=${BBOX_BOGOR}&limit=8`
+-  const res = await fetch(url, { signal })
++export function jarakMeter(a, b) {
++  const R = 6371000
++  const r = (x) => (x * Math.PI) / 180
++  const dLat = r(b[0] - a[0])
++  const dLng = r(b[1] - a[1])
++  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a[0])) * Math.cos(r(b[0])) * Math.sin(dLng / 2) ** 2
++  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)))
++}
++export const teksJarak = (m) => (m == null ? '' : m < 1000 ? `${Math.max(10, Math.round(m / 10) * 10)} m` : `${(m / 1000).toLocaleString('id-ID', { maximumFractionDigits: 1 })} km`)
++
++// cadangan kalau backend tidak bisa dihubungi: Photon (OpenStreetMap) langsung dari browser
++async function cariOsm(q, dekat, signal) {
++  const bias = dekat ? `&lat=${dekat[0]}&lon=${dekat[1]}` : ''
++  const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&bbox=${BBOX_BOGOR}&limit=8${bias}`, { signal })
+   if (!res.ok) return []
+   const d = await res.json()
+   return (d.features ?? [])
+@@ -36,41 +47,130 @@ async function cariOsm(q, signal) {
+         ket: [p.street, p.district ?? p.locality, p.city].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(', '),
+         lat: +lat.toFixed(6),
+         lng: +lng.toFixed(6),
+-        sumber: 'osm',
++        jenis: 'osm',
+       }
+     })
+ }
+ 
+-// Gabungan: tempat cepat (data/tempat.js) + POI database NAIK (/api/poi) + OpenStreetMap. Duplikat nama dibuang.
+-export function useCariTempat(q) {
+-  const [state, setState] = useState({ q: '', hasil: [], loading: false })
++/**
++ * Cari tempat: /api/poi (semua tempat, jalan, kelurahan & perumahan dari OSM di database NAIK; diurutkan paling cocok lalu terdekat)
++ * + daftar tempat cepat. `dekat` = [lat, lng] pusat peta / lokasi pengguna.
++ */
++export function useCariTempat(q, dekat) {
++  const [state, setState] = useState({ kunci: '', hasil: [], gagal: false })
+   const k = norm(q)
++  const d = dekat ? [+dekat[0].toFixed(2), +dekat[1].toFixed(2)] : null // ±1 km, supaya cache server tetap kena
++  const kunci = `${k}|${d?.join(',') ?? ''}`
+   useEffect(() => {
+     if (k.length < 2) return
+     const ctrl = new AbortController()
+     const t = setTimeout(async () => {
+-      setState((s) => ({ ...s, loading: true }))
+-      const [poi, osm] = await Promise.all([
+-        api.poi(k).catch(() => []),
+-        cariOsm(k, ctrl.signal).catch(() => []),
+-      ])
++      let server = null
++      let osm = null
++      try {
++        server = await api.poi(k, d)
++      } catch {
++        osm = await cariOsm(k, d, ctrl.signal).catch(() => null)
++      }
+       if (ctrl.signal.aborted) return
+-      const lokal = TEMPAT.filter((t) => norm(t.nama).includes(k)).map((t) => ({ ...t, sumber: 'naik' }))
+-      const db = poi.map((p) => ({ nama: p.nama, ket: p.alamat ?? p.kategori, lat: p.lat, lng: p.lng, sumber: 'naik' }))
++      const jarak = (x) => (x.jarak_m != null ? x.jarak_m : d ? Math.round(jarakMeter(d, [x.lat, x.lng])) : null)
++      const lokal = TEMPAT.filter((t) => norm(t.nama).includes(k)).map((t) => ({ ...t, jenis: 'naik' }))
+       const lihat = new Set()
+-      const hasil = [...lokal, ...db, ...osm].filter((x) => {
+-        const n = norm(x.nama)
+-        if (lihat.has(n)) return false
+-        lihat.add(n)
+-        return true
+-      })
+-      setState({ q: k, hasil: hasil.slice(0, 10), loading: false })
+-    }, 300)
++      const hasil = [...(server ?? []), ...(osm ?? []), ...lokal]
++        .filter((x) => {
++          const n = norm(x.nama)
++          if (lihat.has(n)) return false
++          lihat.add(n)
++          return true
++        })
++        .map((x) => ({ ...x, jarak_m: jarak(x) }))
++      setState({ kunci, hasil: hasil.slice(0, 10), gagal: server === null && osm === null && !lokal.length })
++    }, 250)
+     return () => {
+       clearTimeout(t)
+       ctrl.abort()
+     }
+-  }, [k])
+-  if (k.length < 2) return { hasil: [], loading: false, siap: false }
+-  return { hasil: state.q === k ? state.hasil : [], loading: state.q !== k || state.loading, siap: state.q === k && !state.loading }
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [kunci])
++  if (k.length < 2) return { hasil: [], loading: false, siap: false, gagal: false }
++  const cocok = state.kunci === kunci
++  return { hasil: cocok ? state.hasil : [], loading: !cocok, siap: cocok, gagal: cocok && state.gagal }
++}
++
++// ---------- riwayat & tempat tersimpan (Rumah, Kampus) — disimpan di browser ----------
++
++const KUNCI_SAYA = 'naik:tempat-saya'
++const KOSONG = { riwayat: [], rumah: null, kampus: null }
++let cadangan = KOSONG // dipakai kalau localStorage diblokir
++
++function bacaSaya() {
++  try {
++    return { ...KOSONG, ...(JSON.parse(localStorage.getItem(KUNCI_SAYA)) ?? {}) }
++  } catch {
++    return cadangan
++  }
++}
++function tulisSaya(d) {
++  cadangan = d
++  try {
++    localStorage.setItem(KUNCI_SAYA, JSON.stringify(d))
++  } catch {
++    // abaikan (mode privat dsb.)
++  }
++  window.dispatchEvent(new Event('naik-tempat-saya'))
++}
++const ringkas = (t) => ({
++  nama: t.nama === 'Lokasi saya' ? t.ket?.split(',')[0] || 'Titik tersimpan' : t.nama,
++  ket: t.ket ?? null,
++  lat: +(+t.lat).toFixed(6),
++  lng: +(+t.lng).toFixed(6),
++})
++const sama = (a, b) => a && b && Math.abs(a.lat - b.lat) < 1e-5 && Math.abs(a.lng - b.lng) < 1e-5
++
++export const tempatSaya = {
++  tambahRiwayat(t) {
++    if (!t || t.nama === 'Lokasi saya') return
++    const d = bacaSaya()
++    tulisSaya({ ...d, riwayat: [ringkas(t), ...d.riwayat.filter((r) => !sama(r, t))].slice(0, 8) })
++  },
++  hapusRiwayat(t) {
++    const d = bacaSaya()
++    tulisSaya({ ...d, riwayat: d.riwayat.filter((r) => !sama(r, t)) })
++  },
++  atur(slot, t) {
++    tulisSaya({ ...bacaSaya(), [slot]: t ? ringkas(t) : null })
++  },
++  sama,
++}
++
++export function useTempatSaya() {
++  const [d, setD] = useState(bacaSaya)
++  useEffect(() => {
++    const f = () => setD(bacaSaya())
++    window.addEventListener('naik-tempat-saya', f)
++    window.addEventListener('storage', f)
++    return () => {
++      window.removeEventListener('naik-tempat-saya', f)
++      window.removeEventListener('storage', f)
++    }
++  }, [])
++  return d
++}
++
++/**
++ * Daftar saran saat kolom masih kosong: Rumah, Kampus, riwayat.
++ * Dipakai kolom Beranda & kolom Dari/Ke. Item = { peran, t, judul? }.
++ */
++export function saranAwal(saya, maksRiwayat = 5) {
++  const out = []
++  if (saya.rumah) out.push({ peran: 'rumah', t: saya.rumah, judul: 'Rumah' })
++  if (saya.kampus) out.push({ peran: 'kampus', t: saya.kampus, judul: 'Kampus' })
++  for (const r of saya.riwayat.slice(0, maksRiwayat)) out.push({ peran: 'riwayat', t: r })
++  return out
++}
++
++export function usePusatPeta() {
++  const map = useMap()
++  const c = map.getCenter()
++  return [c.lat, c.lng]
+ }
+diff --git a/frontend/src/dashboard/icons.jsx b/frontend/src/dashboard/icons.jsx
+index bbf43ab..dcaf0fa 100644
+--- a/frontend/src/dashboard/icons.jsx
++++ b/frontend/src/dashboard/icons.jsx
+@@ -30,3 +30,7 @@ export const IconSignpost = I(<><path d="M12 3v3M12 16v5M18 6H6a1 1 0 0 0-1 1v2a
+ export const IconSwap = I(<><path d="m3 16 4 4 4-4M7 20V4M21 8l-4-4-4 4M17 4v16" /></>)
+ export const IconChevronUp = I(<path d="m18 15-6-6-6 6" />)
+ export const IconNavigation = I(<path d="m3 11 19-9-9 19-2-8z" />)
++export const IconClock = I(<><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></>)
++export const IconHome = I(<><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" /></>)
++export const IconCap = I(<><path d="M22 10 12 5 2 10l10 5 10-5Z" /><path d="M6 12v5c3 2 9 2 12 0v-5" /></>)
++export const IconStar = I(<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" />)
+-- 
+2.43.0
+
