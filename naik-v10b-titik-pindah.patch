@@ -1,0 +1,42 @@
+From e359e968e5384e37b347dc65a409265a52124135 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 8 Nov 2026 02:03:37 +0700
+Subject: [PATCH] fix(rekomendasi): titik pindah harus dekat jalur kedua angkot
+
+Opsi pindah dengan jalan kaki 1 km lebih (mis. 09 lama -> 07 ke Stasiun Bogor)
+tidak lagi muncul: titik pindah maksimal 250 m dari jalur tiap angkot.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01C3HB5NRrpwX98c8uD43zvS
+---
+ backend/app/Http/Controllers/Api/TrayekController.php | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/backend/app/Http/Controllers/Api/TrayekController.php b/backend/app/Http/Controllers/Api/TrayekController.php
+index ba89cca..dd0c3bc 100644
+--- a/backend/app/Http/Controllers/Api/TrayekController.php
++++ b/backend/app/Http/Controllers/Api/TrayekController.php
+@@ -325,6 +325,7 @@ public function rekomendasi(Request $req): JsonResponse
+         $JALAN = 75.0;
+         $ANGKOT = 250.0;
+         $TUNGGU = 5.0;
++        $PINDAH = 250.0;   // jarak maks titik pindah ke jalur tiap angkot (m), jadi jalan kaki pindah <= ±500 m
+         $params = [$a[1], $a[0], $b[1], $b[0], $rad];
+         $base = "
+             p AS (SELECT ST_Transform(ST_SetSRID(ST_MakePoint(?, ?), 4326), 32748) AS a,
+@@ -365,10 +366,11 @@ public function rekomendasi(Request $req): JsonResponse
+             ta AS (   -- titik pindah yang dilewati SETELAH naik di rute pertama
+               SELECT ra.*, x.transfer_id, x.f AS fa, x.d AS dxa
+               FROM ra JOIN naik.mv_transfer_rute x ON x.rute_id = ra.rute_id AND x.f > ra.pa
++                                               AND x.d <= $PINDAH   -- titik pindah harus dekat jalur ini
+               WHERE NOT EXISTS (SELECT 1 FROM rb WHERE rb.rute_id = ra.rute_id AND rb.pb > ra.pa)  -- 1 angkot cukup
+             ), tb AS ( -- titik pindah yang dilewati SEBELUM turun di rute kedua
+               SELECT rb.*, y.transfer_id, y.f AS fb, y.d AS dyb
+-              FROM rb JOIN naik.mv_transfer_rute y ON y.rute_id = rb.rute_id AND y.f < rb.pb
++              FROM rb JOIN naik.mv_transfer_rute y ON y.rute_id = rb.rute_id AND y.f < rb.pb AND y.d <= $PINDAH
+             ), c AS (
+               SELECT ta.kode_trayek AS ka, ta.arah AS arah_1, ta.g AS ga, ta.pa, ta.fa, ta.da,
+                      tb.kode_trayek AS kb, tb.arah AS arah_2, tb.g AS gb, tb.fb, tb.pb, tb.db,
+-- 
+2.43.0
+
