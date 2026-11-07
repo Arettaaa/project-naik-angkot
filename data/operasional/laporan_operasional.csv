@@ -1,0 +1,25 @@
+﻿kode,jenis,nama_trayek,km_data,km_jurnal,selisih_persen,nama_lama,nama_lama_trayek,skor_kemiripan,catatan_pembentukan,tumpang_tindih_data_persen,tumpang_tindih_jurnal_persen
+02 AK,AK,Sukasari – Terminal Bubulak,24.0,28.8,-17,AK-02,Sukasari – Terminal Bubulak,,"abaikan_satu_arah=4, garis_lurus=2; luar jaringan ruas kota 1.8 km",95,100
+03 AK,AK,Baranangsiang – Terminal Bubulak,21.4,20.0,7,AK-03,Baranangsiang – Terminal Bubulak,,"abaikan_satu_arah=4, garis_lurus=2; luar jaringan ruas kota 1.8 km",94,100
+07 AK,AK,Ciparigi – Jl. Ir. H. Juanda (Kebun Raya),15.0,13.3,13,AK-07,Ciparigi – Terminal Merdeka,,abaikan_satu_arah=2,87,100
+09 AK,AK,Ciparigi – Sukasari,19.4,23.6,-18,AK-09,Ciparigi – Sukasari,,"titik_luar_jaringan=1, garis_lurus=1, abaikan_satu_arah=1; luar jaringan ruas kota 0.2 km",99,100
+21 AK,AK,Baranangsiang – Ciawi,15.5,17.2,-10,AK-21,Baranangsiang – Ciawi,,"titik_luar_jaringan=20, garis_lurus=1; luar jaringan ruas kota 10.3 km",50,41
+01,AP,Cipinang Gading – Perumahan Yasmin,28.0,18.1,54,AK-01,Cipinang Gading – Cipaku – Merdeka,0.67,geometri dari data final (artikel rerouting),79,88
+02,AP,Warung Nangka – Lawang Saketeng / Bogor Trade Mall,24.4,24.0,2,AK-04,Warung Nangka – Rancamaya – Ramayana,0.69,geometri dari data final (artikel rerouting),34,18
+03,AP,Cimahpar – Bogor Trade Mall,16.5,16.9,-3,AK-05,Cimahpar – Pangrango – Ramayana,0.69,geometri dari data final (artikel rerouting),71,60
+05,AP,Ciheuleut – Bogor Trade Mall,9.8,9.5,3,AK-06,Ciheuleut – Jl. Bangka – Ramayana,0.82,geometri dari data final (artikel rerouting),78,73
+08,AP,Taman Pajajaran – Bantar Kemang – Terminal Merdeka,22.3,17.4,28,AK-10,Bantar Kemang – Sukasari – Merdeka,0.79,geometri dari data final (artikel rerouting),93,97
+09,AP,Baranangsiang Indah – Pasar Baru Bogor,9.2,13.7,-33,AK-11,Pajajaran Indah – Pasar Bogor,0.81,geometri dari data final (artikel rerouting),82,49
+10,AP,Cimanggu Permai – Pasar Anyar,6.5,10.5,-39,AK-12,Cimanggu – MA Salmun – Pasar Anyar,0.86,geometri dari data final (artikel rerouting),73,37
+13,AP,Mutiara Bogor Raya – Bogor Trade Mall,12.7,15.4,-17,AK-13,Bantar Kemang – Jl. Bangka – Ramayana,0.83,geometri dari data final (artikel rerouting),90,74
+14,AP,Sukasari – Pasir Kuda – Terminal Bubulak,25.3,23.6,7,AK-14,Sukasari – Pasir Kuda – Bubulak,0.9,geometri dari data final (artikel rerouting),65,81
+15,AP,Terminal Merdeka – Situgede,19.9,15.6,28,AK-15,Merdeka – Bubulak – SBJ,0.82,geometri dari data final (artikel rerouting),63,58
+17,AP,Salabenda – Pasar Anyar,25.6,22.7,13,AK-16,Pasar Anyar – Salabenda,0.71,geometri dari data final (artikel rerouting),93,100
+18,AP,Villa Mutiara – Pasar Anyar,30.3,27.1,12,,,0.64,geometri dari data final (artikel rerouting); mirip AK-16 (skor 0.64) tapi AK-16 lebih cocok ke trayek 17,86,100
+19,AP,Bina Marga – Tanah Baru – Pomad (Ciluar),17.2,17.0,1,AK-17,Pomad – Tanah Baru – Bina Marga,0.74,geometri dari data final (artikel rerouting),22,14
+21,AP,Mulyaharja – Lawang Saketeng / Bogor Trade Mall,7.2,18.0,-60,AK-18,Ramayana – Mulyaharja,0.55,geometri dari data final (artikel rerouting),54,28
+22,AP,Terminal Bubulak – Kencana,20.4,18.0,13,AK-19,Terminal Bubulak – Kencana,0.66,geometri dari data final (artikel rerouting),52,63
+23,AP,Taman Griya Kencana – Pasar Anyar,25.4,23.1,10,,,0.52,geometri dari data final (artikel rerouting),65,60
+24,AP,Pasar Anyar – Pondok Rumput,9.0,8.3,8,AK-22,Pasar Anyar – Pondok Rumput,0.69,geometri dari data final (artikel rerouting),64,69
+25,AP,Bogor Trade Mall – Taman Kencana – Warung Jambu,13.3,12.8,4,AK-23,Ramayana – Taman Kencana – Warung Jambu,0.94,geometri dari data final (artikel rerouting),61,58
+30,AP,Warung Jambu – BTM,12.7,10.7,19,AK-08,Warung Jambu – Jl. Ir. H. Juanda – Ramayana,0.9,geometri dari data final (artikel rerouting),82,84
