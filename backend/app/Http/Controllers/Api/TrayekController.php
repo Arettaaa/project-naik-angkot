@@ -325,6 +325,7 @@ class TrayekController extends Controller
         $JALAN = 75.0;
         $ANGKOT = 250.0;
         $TUNGGU = 5.0;
+        $PINDAH = 250.0;   // jarak maks titik pindah ke jalur tiap angkot (m), jadi jalan kaki pindah <= ±500 m
         $params = [$a[1], $a[0], $b[1], $b[0], $rad];
         $base = "
             p AS (SELECT ST_Transform(ST_SetSRID(ST_MakePoint(?, ?), 4326), 32748) AS a,
@@ -365,10 +366,11 @@ class TrayekController extends Controller
             ta AS (   -- titik pindah yang dilewati SETELAH naik di rute pertama
               SELECT ra.*, x.transfer_id, x.f AS fa, x.d AS dxa
               FROM ra JOIN naik.mv_transfer_rute x ON x.rute_id = ra.rute_id AND x.f > ra.pa
+                                               AND x.d <= $PINDAH   -- titik pindah harus dekat jalur ini
               WHERE NOT EXISTS (SELECT 1 FROM rb WHERE rb.rute_id = ra.rute_id AND rb.pb > ra.pa)  -- 1 angkot cukup
             ), tb AS ( -- titik pindah yang dilewati SEBELUM turun di rute kedua
               SELECT rb.*, y.transfer_id, y.f AS fb, y.d AS dyb
-              FROM rb JOIN naik.mv_transfer_rute y ON y.rute_id = rb.rute_id AND y.f < rb.pb
+              FROM rb JOIN naik.mv_transfer_rute y ON y.rute_id = rb.rute_id AND y.f < rb.pb AND y.d <= $PINDAH
             ), c AS (
               SELECT ta.kode_trayek AS ka, ta.arah AS arah_1, ta.g AS ga, ta.pa, ta.fa, ta.da,
                      tb.kode_trayek AS kb, tb.arah AS arah_2, tb.g AS gb, tb.fb, tb.pb, tb.db,
