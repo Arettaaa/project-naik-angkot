@@ -17,6 +17,21 @@ export function Floating({ className = '', children, ...rest }) {
   )
 }
 
+// Lapisan bebas posisi (mis. `fixed`) di atas peta; klik/scroll di dalamnya tidak tembus ke peta.
+export function Lapisan({ className = '', children }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!ref.current) return
+    L.DomEvent.disableClickPropagation(ref.current)
+    L.DomEvent.disableScrollPropagation(ref.current)
+  }, [])
+  return (
+    <div ref={ref} className={`cursor-auto ${className}`}>
+      {children}
+    </div>
+  )
+}
+
 export function Card({ className = '', children }) {
   return (
     <div className={`rounded-[28px] border border-white/70 bg-white/95 shadow-[0_8px_30px_rgba(21,30,44,0.12)] backdrop-blur ${className}`}>

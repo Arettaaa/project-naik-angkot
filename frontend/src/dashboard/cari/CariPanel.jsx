@@ -5,12 +5,15 @@ import L from 'leaflet'
 import { api } from '../../api/naik'
 import KolomTempat from '../components/KolomTempat'
 import PinPeta from './PinPeta'
-import { tempatSaya, useTempatSaya } from '../hooks'
+import { tempatSaya, useLayarBesar, useTempatSaya } from '../hooks'
 import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
 import { useDashboard } from '../context'
-import { Card, CardHeader, Floating, KodeBadge as Badge, PrimaryButton } from '../ui'
-import { IconCap, IconHome, IconMap, IconSearch } from '../icons'
+import { Card, CardHeader, Floating, KodeBadge as Badge } from '../ui'
+import {
+  IconArrowLeft, IconBus, IconCap, IconChevronRight, IconHome, IconList, IconMap, IconPlay, IconSearch, IconSwap, IconTransfer, IconWalk,
+} from '../icons'
 import NavigasiSimulasi from './NavigasiSimulasi'
+import { aturToleransiKlik } from '../simulasi'
 
 const KodeBadge = (p) => <Badge size="sm" {...p} />
 
@@ -24,8 +27,18 @@ function PanelSection({ title, children }) {
 }
 
 function KlikPeta({ onClick }) {
-  useMapEvents({ click: (e) => onClick(e.latlng) })
+  const map = useMapEvents({ click: (e) => onClick(e.latlng) })
+  useEffect(() => aturToleransiKlik(map, 10), [map])
   return null
+}
+
+// opsi tercepat dari semua hasil (langsung maupun pindah)
+function opsiTercepat(data) {
+  const semua = [
+    ...data.langsung.map((o, i) => ({ jenis: 'langsung', i, menit: o.menit ?? 0 })),
+    ...data.transfer.map((o, i) => ({ jenis: 'transfer', i, menit: o.menit ?? 0 })),
+  ]
+  return semua.sort((a, b) => a.menit - b.menit)[0] ?? null
 }
 
 function FitToPoints({ points, detailBuka, navigasiAktif }) {
@@ -55,7 +68,6 @@ export default function CariPanel() {
   const [asal, setAsal] = useState(null)
   const [tujuan, setTujuan] = useState(null)
   const [mode, setMode] = useState('asal') // titik mana yang diisi saat peta diklik
-  const [radius, setRadius] = useState(400)
   const [hasil, setHasil] = useState({ data: null, loading: false, error: null })
   const [pilih, setPilih] = useState(null) // {jenis:'langsung'|'transfer', i}
   const [detailBuka, setDetailBuka] = useState(true)
@@ -64,6 +76,8 @@ export default function CariPanel() {
   const [pin, setPin] = useState(null) // 'asal' | 'tujuan' saat memilih lewat pin geser
   const [navigasiAktif, setNavigasiAktif] = useState(false)
   const [activeStepNav, setActiveStepNav] = useState(0)
+  const besar = useLayarBesar()
+  const hasilRef = useRef(null)
 
   // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, coba lokasi saya sebagai asal, lalu cari otomatis
   const [params] = useSearchParams()
@@ -82,13 +96,15 @@ export default function CariPanel() {
     if (!asal) lokasiSaya({ diam: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
+  // sekali pilih langsung dicari: begitu asal & tujuan terisi, tanpa perlu tekan tombol
+  const permintaan = useRef(0)
   useEffect(() => {
-    if (otomatis.current && asal && tujuan) {
-      otomatis.current = false
-      cari()
-    }
+    otomatis.current = false
+    if (!asal || !tujuan) return
+    const t = setTimeout(cari, 120)
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asal, tujuan])
+  }, [asal?.lat, asal?.lng, tujuan?.lat, tujuan?.lng])
 
   function setTitik(jenis, titik) {
     if (jenis === 'asal') setAsal(titik)
@@ -140,22 +156,20 @@ export default function CariPanel() {
 
   async function cari() {
     if (!asal || !tujuan) return
-    setHasil({ data: null, loading: true, error: null })
-    setPilih(null)
-    setDetailBuka(false)
+    const id = ++permintaan.current
+    setHasil((h) => ({ data: h.data, loading: true, error: null }))
     setNavigasiAktif(false)
     try {
-      const data = await api.rekomendasi(asal, tujuan, radius)
+      const data = await api.rekomendasi(asal, tujuan)
+      if (id !== permintaan.current) return // sudah ada pencarian yang lebih baru
       setHasil({ data, loading: false, error: null })
-      if (data.langsung.length) {
-        setPilih({ jenis: 'langsung', i: 0 })
-        setDetailBuka(true)
-      } else if (data.transfer.length) {
-        setPilih({ jenis: 'transfer', i: 0 })
-        setDetailBuka(true)
-      }
+      const best = opsiTercepat(data)
+      setPilih(best ? { jenis: best.jenis, i: best.i } : null)
+      // layar lebar: langsung tampilkan langkah opsi tercepat. HP: tetap di daftar hasil (panel langkah menutupi peta)
+      setDetailBuka(Boolean(best) && window.innerWidth >= 1024)
+      if (window.innerWidth < 1024) setTimeout(() => hasilRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
     } catch (error) {
-      setHasil({ data: null, loading: false, error })
+      if (id === permintaan.current) setHasil({ data: null, loading: false, error })
     }
   }
 
@@ -174,6 +188,7 @@ export default function CariPanel() {
     setPilih(p)
     setDetailBuka(true)
     setNavigasiAktif(false)
+    if (!besar) setPanelCariBuka(false) // HP: daftar diciutkan supaya peta & langkah kelihatan
   }
 
   const panel = (
@@ -203,7 +218,9 @@ export default function CariPanel() {
             className="rounded-full border border-border-nav px-3 py-1 text-xs font-semibold text-dark/70 hover:bg-mist disabled:opacity-40"
             aria-label="Tukar asal dan tujuan"
           >
-            ⇅ Tukar
+            <span className="inline-flex items-center gap-1">
+              <IconSwap className="h-3.5 w-3.5" /> Tukar
+            </span>
           </button>
         </div>
         <TitikInput
@@ -218,22 +235,12 @@ export default function CariPanel() {
         />
         {lokasiErr && <p className="mt-2 text-xs text-red-700">{lokasiErr}</p>}
 
-        <label className="mt-3.5 flex items-center justify-between gap-3 text-xs sm:text-sm">
-          <span className="text-dark/70 font-medium">Maks. jalan kaki ke jalur</span>
-          <select
-            value={radius}
-            onChange={(e) => setRadius(Number(e.target.value))}
-            className="rounded-lg border border-border-nav px-2.5 py-1.5 text-xs sm:text-sm"
-          >
-            {[200, 400, 600, 800, 1000].map((r) => (
-              <option key={r} value={r}>{r} m</option>
-            ))}
-          </select>
-        </label>
-
-        <PrimaryButton onClick={cari} disabled={!asal || !tujuan || hasil.loading} className="mt-3.5 py-2.5 sm:py-3 text-sm">
-          {hasil.loading ? 'Mencari…' : 'Cari rute'}
-        </PrimaryButton>
+        {hasil.loading && (
+          <p className="mt-3 flex items-center justify-center gap-2 text-[12.5px] font-semibold text-primary" role="status">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
+            Mencari angkot…
+          </p>
+        )}
         {(!asal || !tujuan) && (
           <p className="mt-2 text-center text-[11px] sm:text-xs text-dark/50 leading-relaxed">
             Ketik nama tempat, pilih lewat peta, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
@@ -245,14 +252,13 @@ export default function CariPanel() {
         )}
 
         {hasil.data && (
-          <div className="mt-4 border-t border-[#EDF1F2] pt-3">
+          <div ref={hasilRef} className={`mt-4 scroll-mt-2 border-t border-[#EDF1F2] pt-3 transition-opacity ${hasil.loading ? 'opacity-50' : ''}`}>
             <Hasil
               data={hasil.data}
               warna={warna}
               pilih={pilih}
               onPilihOpsi={pilihOpsi}
               onMulaiNavigasi={() => setNavigasiAktif(true)}
-              radius={radius}
             />
           </div>
         )}
@@ -300,7 +306,7 @@ export default function CariPanel() {
             onClick={() => setPanelCariBuka(true)}
             className="flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-xs font-bold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.18)] ring-1 ring-black/5 hover:bg-mist active:scale-95"
           >
-            <span className="text-primary font-bold">🔍</span>
+            <IconSearch className="h-4 w-4 text-primary" />
             <span>Cari Rute</span>
             {asal && tujuan && (
               <span className="text-dark/50 font-medium truncate max-w-[140px]">
@@ -315,13 +321,13 @@ export default function CariPanel() {
             onClick={() => setNavigasiAktif(false)}
             className="flex items-center gap-2 rounded-2xl bg-white px-3.5 py-2 text-xs font-bold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.18)] ring-1 ring-black/5 hover:bg-mist active:scale-95"
           >
-            <span>◀</span>
-            <span>Ubah Rute / Cari</span>
+            <IconArrowLeft className="h-4 w-4" />
+            <span>Ubah rute</span>
           </button>
         </Floating>
       )}
 
-      {/* Mode Navigasi Realtime (Simulasi Google Maps) */}
+      {/* Simulasi perjalanan (animasi, bukan pelacakan posisi asli) */}
       {navigasiAktif && opsi && (
         <NavigasiSimulasi
           opsi={opsi}
@@ -372,12 +378,12 @@ export default function CariPanel() {
             onClick={() => setDetailBuka(true)}
             className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-4 text-[13px] font-semibold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.16)] transition hover:bg-[#F6F9F9] active:scale-[0.98]"
           >
-            <span className="text-primary font-bold">📋</span> Buka Langkah Perjalanan
+            <IconList className="h-4 w-4 text-primary" /> Langkah perjalanan
           </button>
         </Floating>
       )}
 
-      {!navigasiAktif && (
+      {!navigasiAktif && (besar || !(opsi && detailBuka)) && !(!besar && panelCariBuka && hasil.data) && (
         <Floating className="bottom-24 left-1/2 -translate-x-1/2 lg:bottom-4">
           <p className="rounded-full bg-white px-4 py-2 text-[13px] font-semibold whitespace-nowrap shadow-[0_8px_30px_rgba(21,30,44,0.14)]">
             Klik peta untuk mengisi{' '}
@@ -444,97 +450,99 @@ function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, onLokasiSaya
   )
 }
 
-function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi, radius }) {
+const menitOpsi = (o) =>
+  o.menit ??
+  ('kode_1' in o
+    ? menitJalan(o.jalan_ke_naik_m + o.jalan_dari_turun_m) + menitAngkot(o.jarak_angkot_1_m + o.jarak_angkot_2_m) + 10
+    : menitJalan(o.jalan_ke_naik_m + o.jalan_dari_turun_m) + menitAngkot(o.jarak_angkot_m) + 5)
+
+function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
   const kosong = !data.langsung.length && !data.transfer.length
+  const dekat = data.jarak_lurus_m != null && data.jarak_lurus_m <= 1200
+  const tercepat = opsiTercepat(data)
   return (
     <>
+      {dekat && (
+        <div className="mx-5 mb-1 flex items-center gap-3 rounded-xl bg-[#EEF3FE] px-3 py-2.5 text-[12.5px] text-[#1E3A8A]">
+          <IconWalk className="h-5 w-5 shrink-0" />
+          <span>
+            Dekat — jalan kaki saja sekitar <strong>{menitJalan(data.jarak_lurus_m * 1.25)} menit</strong> ({jarak(data.jarak_lurus_m * 1.25)}).
+          </span>
+        </div>
+      )}
       {kosong && (
         <PanelSection>
           <p className="text-sm font-semibold">Belum ada angkot yang cocok.</p>
           <p className="mt-1 text-sm text-dark/70">
-            Tidak ada jalur dalam radius {radius} m dari titik asal/tujuan, atau perlu pindah lebih dari sekali. Coba perbesar jarak jalan
-            kaki atau geser titiknya mendekati jalan besar.
+            Tidak ada jalur angkot dalam ±{data.radius_jalan_kaki_m ?? 800} m dari titik asal/tujuan, atau perlu pindah lebih dari sekali.
+            Coba geser titiknya ke jalan besar terdekat.
           </p>
         </PanelSection>
       )}
-      {data.langsung.length > 0 && (
-        <PanelSection title="Langsung · 1 angkot">
-          <div className="space-y-2">
-            {data.langsung.map((o, i) => {
-              const aktif = pilih?.jenis === 'langsung' && pilih.i === i
-              return (
-                <KartuOpsi
-                  key={o.rute_id}
-                  aktif={aktif}
-                  onClick={() => onPilihOpsi({ jenis: 'langsung', i })}
-                >
-                  <div className="flex items-center gap-2">
-                    <KodeBadge kode={o.kode_trayek} warna={warna[o.kode_trayek]} size="sm" />
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{o.arah}</span>
-                    <span className="font-display font-bold text-primary">{rupiah(o.tarif)}</span>
-                  </div>
-                  <Ringkas jalan={o.jalan_ke_naik_m + o.jalan_dari_turun_m} angkot={o.jarak_angkot_m} />
-                  {aktif && (
-                    <div className="mt-2.5 flex items-center justify-between border-t border-primary/10 pt-2 text-[11px] font-semibold text-primary">
-                      <button
+      {[
+        ['langsung', 'Langsung · 1 angkot'],
+        ['transfer', 'Pindah 1x · 2 angkot'],
+      ].map(([jenis, judul]) =>
+        data[jenis].length ? (
+          <PanelSection key={jenis} title={judul}>
+            <div className="space-y-2">
+              {data[jenis].map((o, i) => {
+                const aktif = pilih?.jenis === jenis && pilih.i === i
+                const transfer = jenis === 'transfer'
+                const kode = transfer ? [o.kode_1, o.kode_2] : [o.kode_trayek]
+                const jalan = o.jalan_ke_naik_m + o.jalan_dari_turun_m + (o.jalan_pindah_m ?? 0)
+                const angkot = transfer ? o.jarak_angkot_1_m + o.jarak_angkot_2_m : o.jarak_angkot_m
+                return (
+                  <KartuOpsi key={kode.join('-')} aktif={aktif} onClick={() => onPilihOpsi({ jenis, i })}>
+                    <div className="flex items-center gap-1.5">
+                      {kode.map((k, j) => (
+                        <span key={k} className="flex items-center gap-1.5">
+                          {j > 0 && <IconTransfer className="h-3.5 w-3.5 text-dark/35" />}
+                          <KodeBadge kode={k} warna={warna[k]} />
+                        </span>
+                      ))}
+                      <span className="ml-1 min-w-0 flex-1 truncate text-[13px] font-semibold text-dark">
+                        {transfer ? `ke ${o.arah_2}` : o.arah}
+                      </span>
+                      <span className="font-display text-[15px] font-bold text-dark">{menitOpsi(o)} mnt</span>
+                    </div>
+                    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-dark/55">
+                      <span className="inline-flex items-center gap-1">
+                        <IconWalk className="h-3.5 w-3.5" />
+                        {jarak(jalan)}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <IconBus className="h-3.5 w-3.5" />
+                        {jarak(angkot)}
+                      </span>
+                      <span>{rupiah(o.tarif)}</span>
+                      {tercepat?.jenis === jenis && tercepat.i === i && (
+                        <span className="rounded-full bg-primary/10 px-1.5 py-px text-[10.5px] font-bold text-primary">tercepat</span>
+                      )}
+                    </p>
+                    {aktif && (
+                      <span
+                        role="button"
+                        tabIndex={0}
                         onClick={(e) => {
                           e.stopPropagation()
                           onMulaiNavigasi?.()
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
+                        onKeyDown={(e) => e.key === 'Enter' && onMulaiNavigasi?.()}
+                        className="mt-2.5 inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[12px] font-semibold text-white hover:bg-[#178563]"
                       >
-                        <span>▶ Mulai</span>
-                      </button>
-                      <span className="hidden sm:inline">Lihat rincian →</span>
-                    </div>
-                  )}
-                </KartuOpsi>
-              )
-            })}
-          </div>
-        </PanelSection>
+                        <IconPlay className="h-3.5 w-3.5" /> Mulai simulasi
+                      </span>
+                    )}
+                  </KartuOpsi>
+                )
+              })}
+            </div>
+          </PanelSection>
+        ) : null,
       )}
-      {data.transfer.length > 0 && (
-        <PanelSection title="1x pindah · 2 angkot">
-          <div className="space-y-2">
-            {data.transfer.map((o, i) => {
-              const aktif = pilih?.jenis === 'transfer' && pilih.i === i
-              return (
-                <KartuOpsi
-                  key={`${o.kode_1}-${o.kode_2}`}
-                  aktif={aktif}
-                  onClick={() => onPilihOpsi({ jenis: 'transfer', i })}
-                >
-                  <div className="flex items-center gap-2">
-                    <KodeBadge kode={o.kode_1} warna={warna[o.kode_1]} size="sm" />
-                    <span className="text-dark/40">→</span>
-                    <KodeBadge kode={o.kode_2} warna={warna[o.kode_2]} size="sm" />
-                    <span className="min-w-0 flex-1 truncate text-xs text-dark/60">pindah 1x</span>
-                    <span className="font-display font-bold text-primary">{rupiah(o.tarif)}</span>
-                  </div>
-                  <Ringkas jalan={o.jalan_ke_naik_m + o.jalan_dari_turun_m} angkot={o.jarak_angkot_1_m + o.jarak_angkot_2_m} />
-                  {aktif && (
-                    <div className="mt-2.5 flex items-center justify-between border-t border-primary/10 pt-2 text-[11px] font-semibold text-primary">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onMulaiNavigasi?.()
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
-                      >
-                        <span>▶ Mulai</span>
-                      </button>
-                      <span className="hidden sm:inline">Lihat rincian →</span>
-                    </div>
-                  )}
-                </KartuOpsi>
-              )
-            })}
-          </div>
-        </PanelSection>
-      )}
-      <p className="px-5 py-4 text-xs leading-relaxed text-dark/50">
-        Tarif rata-rata Rp5.000 / angkot. Klik salah satu opsi untuk melihat jalur di peta dan rincian langkah perjalanan di panel kanan.
+      <p className="px-5 py-3 text-[11.5px] leading-relaxed text-dark/45">
+        Urut dari perkiraan waktu (jalan kaki, naik angkot, dan ±5 menit menunggu tiap angkot). Tarif Rp5.000 per angkot.
       </p>
     </>
   )
@@ -542,289 +550,140 @@ function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi, radius }) {
 
 function KartuOpsi({ aktif, onClick, children }) {
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className={`w-full rounded-xl border p-3 text-left transition ${aktif ? 'border-primary bg-primary/5 ring-2 ring-primary/15' : 'border-border-nav hover:bg-[#F4FAF8]'}`}
+      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      className={`w-full cursor-pointer rounded-xl border p-3 text-left transition ${aktif ? 'border-primary bg-primary/5 ring-2 ring-primary/15' : 'border-border-nav hover:bg-[#F4FAF8]'}`}
     >
       {children}
-    </button>
+    </div>
   )
 }
 
-function Ringkas({ jalan, angkot }) {
+function Tahap({ ikon: Ikon, warna = '#E7EEFD', warnaIkon = '#2563EB', sorot, label, children }) {
   return (
-    <p className="mt-2 text-xs text-dark/60">
-      ± {menitJalan(jalan) + menitAngkot(angkot)} menit · jalan kaki {jarak(jalan)} · naik angkot {jarak(angkot)}
-    </p>
+    <li className={`relative flex items-start gap-3 rounded-xl p-1.5 transition ${sorot ? 'bg-primary/8 ring-1 ring-primary/25' : ''}`}>
+      <span className="z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: warna, color: warnaIkon }}>
+        {typeof Ikon === 'string' ? <span className="text-[12px] font-bold">{Ikon}</span> : <Ikon className="h-4 w-4" />}
+      </span>
+      <div className="min-w-0 pt-0.5">
+        {sorot && <span className="mb-0.5 inline-block rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-white">{label}</span>}
+        {children}
+      </div>
+    </li>
   )
 }
 
-function DetailLangkah({
-  opsi,
-  warna,
-  asal,
-  tujuan,
-  onClose,
-  navigasiAktif,
-  onMulaiNavigasi,
-  onStopNavigasi,
-  activeStepIdx = 0,
-}) {
+function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMulaiNavigasi, onStopNavigasi, activeStepIdx = 0 }) {
   const transfer = 'kode_1' in opsi
-  const totalJalan = opsi.jalan_ke_naik_m + opsi.jalan_dari_turun_m
+  const totalJalan = opsi.jalan_ke_naik_m + opsi.jalan_dari_turun_m + (opsi.jalan_pindah_m ?? 0)
   const totalAngkot = transfer ? opsi.jarak_angkot_1_m + opsi.jarak_angkot_2_m : opsi.jarak_angkot_m
-  const totalWaktu = menitJalan(totalJalan) + menitAngkot(totalAngkot)
-
-  const isStep0 = navigasiAktif && activeStepIdx === 0
-  const isStep1 = navigasiAktif && activeStepIdx === 1
-  const isStep2 = navigasiAktif && transfer && activeStepIdx === 2
-  const isStep3 = navigasiAktif && transfer && activeStepIdx === 3
-  const isStepAkhir = navigasiAktif && (transfer ? activeStepIdx === 4 : activeStepIdx === 2)
+  const k1 = transfer ? opsi.kode_1 : opsi.kode_trayek
+  const sorot = (i) => navigasiAktif && activeStepIdx === i
+  const akhir = transfer ? 4 : 2
 
   return (
     <Card className="flex max-h-full min-h-0 flex-1 flex-col overflow-hidden">
       <CardHeader
         title="Langkah Perjalanan"
         onClose={onClose}
-        subtitle={
-          transfer
-            ? `Trayek ${nomor(opsi.kode_1)} transit ke ${nomor(opsi.kode_2)}`
-            : `Trayek ${nomor(opsi.kode_trayek)} langsung`
-        }
+        subtitle={transfer ? `Angkot ${nomor(opsi.kode_1)}, pindah ke ${nomor(opsi.kode_2)}` : `Angkot ${nomor(opsi.kode_trayek)} langsung`}
       />
-      <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-8 lg:px-6">
-        {/* Ringkasan Perjalanan */}
-        <div className="rounded-2xl border border-[#E3E8EA]/70 bg-[#F6F9F9] p-3.5">
-          <div className="flex items-center justify-between border-b border-[#E3E8EA]/70 pb-2.5">
-            <div className="flex items-center gap-2">
-              {transfer ? (
-                <>
-                  <KodeBadge kode={opsi.kode_1} warna={warna[opsi.kode_1]} size="sm" />
-                  <span className="font-bold text-dark/40">→</span>
-                  <KodeBadge kode={opsi.kode_2} warna={warna[opsi.kode_2]} size="sm" />
-                  <span className="text-xs font-medium text-dark/60">pindah 1x</span>
-                </>
-              ) : (
-                <>
-                  <KodeBadge kode={opsi.kode_trayek} warna={warna[opsi.kode_trayek]} size="sm" />
-                  <span className="text-xs font-medium text-dark/60">langsung</span>
-                </>
-              )}
+      <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-6 lg:px-6">
+        <div className="grid grid-cols-4 gap-1 rounded-2xl bg-[#F6F9F9] p-3 text-center">
+          {[
+            ['Waktu', `±${menitOpsi(opsi)} mnt`],
+            ['Jalan', jarak(totalJalan)],
+            ['Angkot', jarak(totalAngkot)],
+            ['Tarif', rupiah(opsi.tarif)],
+          ].map(([l, v]) => (
+            <div key={l}>
+              <p className="text-[11px] text-dark/50">{l}</p>
+              <p className="mt-0.5 text-[13px] font-bold text-dark">{v}</p>
             </div>
-            <span className="font-display text-base font-bold text-primary">
-              {rupiah(opsi.tarif)}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2 pt-2.5 text-center text-xs">
-            <div>
-              <p className="text-dark/50">Estimasi</p>
-              <p className="mt-0.5 font-bold text-dark">± {totalWaktu} mnt</p>
-            </div>
-            <div>
-              <p className="text-dark/50">Jalan Kaki</p>
-              <p className="mt-0.5 font-bold text-dark">{jarak(totalJalan)}</p>
-            </div>
-            <div>
-              <p className="text-dark/50">Naik Angkot</p>
-              <p className="mt-0.5 font-bold text-dark">{jarak(totalAngkot)}</p>
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* Tombol Mulai Navigasi Google Maps Style */}
-        <div className="mt-3.5">
+        <div className="mt-3">
           {!navigasiAktif ? (
             <button
               onClick={onMulaiNavigasi}
-              className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3 px-4 text-sm font-bold text-white shadow-[0_6px_20px_rgba(5,150,105,0.32)] transition hover:from-emerald-700 hover:to-teal-700 active:scale-[0.98]"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[14.5px] font-semibold text-white shadow-[0_6px_16px_rgba(26,147,111,0.25)] transition hover:bg-[#178563] active:scale-[0.98]"
             >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/25 text-xs text-white">
-                ▶
-              </span>
-              <span>Mulai Navigasi Realtime</span>
+              <IconPlay className="h-4 w-4" /> Mulai simulasi perjalanan
             </button>
           ) : (
-            <div className="flex items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-50/80 p-3">
-              <div className="flex items-center gap-2.5">
-                <span className="relative flex h-3 w-3">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-600"></span>
-                </span>
-                <span className="text-xs font-bold text-emerald-800">Navigasi Sedang Berjalan</span>
-              </div>
-              <button
-                onClick={onStopNavigasi}
-                className="rounded-xl border border-red-200 bg-white px-2.5 py-1 text-xs font-bold text-red-600 hover:bg-red-50"
-              >
+            <div className="flex items-center justify-between rounded-2xl border border-primary/25 bg-primary/5 p-3">
+              <span className="text-[13px] font-semibold text-primary">Simulasi sedang berjalan</span>
+              <button onClick={onStopNavigasi} className="rounded-lg border border-[#E3E8EA] bg-white px-2.5 py-1 text-xs font-semibold text-dark/70 hover:bg-[#F4F7F7]">
                 Hentikan
               </button>
             </div>
           )}
         </div>
 
-        {/* Timeline Vertikal Langkah-Langkah */}
-        <div className="mt-5">
-          <h4 className="mb-3.5 text-[12px] font-bold tracking-wider text-dark/50 uppercase">
-            Panduan Rute
-          </h4>
-
-          <div className="relative space-y-4 before:absolute before:top-3 before:bottom-3 before:left-[15px] before:w-[2px] before:bg-[#E3E8EA]">
-            {/* 1. Titik Asal */}
-            <div className="relative flex items-start gap-3.5 pl-1">
-              <span
-                className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow-sm"
-                style={{ backgroundColor: WARNA_ASAL }}
-              >
-                A
-              </span>
-              <div className="min-w-0 pt-0.5">
-                <p className="text-xs font-semibold text-dark/50">Titik Awal</p>
-                <p className="text-sm font-bold leading-snug text-dark">{asal?.nama || 'Lokasi asal'}</p>
-              </div>
-            </div>
-
-            {/* 2. Jalan kaki ke titik naik */}
-            <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStep0 ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
-              <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#EAF4EE] text-sm shadow-sm">
-                🚶
-              </span>
-              <div className="min-w-0 pt-0.5">
-                {isStep0 && (
-                  <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
-                    Posisi Anda Sekarang
-                  </span>
-                )}
-                <p className="text-sm text-dark/80">
-                  Jalan kaki <strong className="text-dark">{jarak(opsi.jalan_ke_naik_m)}</strong> (±{menitJalan(opsi.jalan_ke_naik_m)} mnt) ke jalur angkot
+        <h4 className="mt-5 mb-2 text-[11.5px] font-bold tracking-wider text-dark/45 uppercase">Panduan rute</h4>
+        <ol className="relative space-y-1.5 before:absolute before:top-4 before:bottom-4 before:left-[21.5px] before:w-0.5 before:bg-[#E3E8EA]">
+          <Tahap ikon="A" warna={WARNA_ASAL} warnaIkon="#fff">
+            <p className="text-[11.5px] text-dark/50">Berangkat dari</p>
+            <p className="text-[14px] leading-snug font-semibold text-dark">{asal?.nama || 'Lokasi asal'}</p>
+          </Tahap>
+          <Tahap ikon={IconWalk} sorot={sorot(0)} label="sekarang">
+            <p className="text-[13.5px] text-dark/80">
+              Jalan kaki <strong className="text-dark">{jarak(opsi.jalan_ke_naik_m)}</strong> (±{menitJalan(opsi.jalan_ke_naik_m)} mnt) ke jalur angkot
+            </p>
+          </Tahap>
+          <Tahap ikon={IconBus} warna={warna[k1] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(1)} label="di angkot">
+            <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-dark">
+              Naik angkot <KodeBadge kode={k1} warna={warna[k1]} />
+            </p>
+            <p className="mt-0.5 text-[12px] text-dark/60">
+              Arah {transfer ? opsi.arah_1 : opsi.arah} · {jarak(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} (±
+              {menitAngkot(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} mnt)
+            </p>
+          </Tahap>
+          {transfer && (
+            <>
+              <Tahap ikon={IconTransfer} warna="#EFE9FF" warnaIkon="#6D42C7" sorot={sorot(2)} label="pindah">
+                <p className="text-[13.5px] font-semibold text-[#5B34B0]">Pindah angkot</p>
+                <p className="mt-0.5 text-[12px] text-dark/60">
+                  Turun, jalan {opsi.jalan_pindah_m != null ? jarak(opsi.jalan_pindah_m) : 'sebentar'} ke jalur {nomor(opsi.kode_2)}
                 </p>
-              </div>
-            </div>
-
-            {/* 3. Naik Angkot 1 */}
-            <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStep1 ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
-              <span
-                className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm shadow-sm"
-                style={{ backgroundColor: (warna[transfer ? opsi.kode_1 : opsi.kode_trayek] ?? '#1A936F') + '30' }}
-              >
-                🚐
-              </span>
-              <div className="min-w-0 pt-0.5">
-                {isStep1 && (
-                  <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
-                    Di Dalam Angkot
-                  </span>
-                )}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-sm font-bold text-dark">Naik Angkot</span>
-                  <KodeBadge kode={transfer ? opsi.kode_1 : opsi.kode_trayek} warna={warna[transfer ? opsi.kode_1 : opsi.kode_trayek]} size="sm" />
-                </div>
-                <p className="mt-0.5 text-xs text-dark/65">
-                  Arah {transfer ? opsi.arah_1 : opsi.arah} · ±{jarak(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} (±{menitAngkot(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} mnt)
+              </Tahap>
+              <Tahap ikon={IconBus} warna={warna[opsi.kode_2] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(3)} label="di angkot">
+                <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-dark">
+                  Naik angkot <KodeBadge kode={opsi.kode_2} warna={warna[opsi.kode_2]} />
                 </p>
-              </div>
-            </div>
-
-            {/* Jika Transfer: Titik Pindah & Angkot 2 */}
-            {transfer && (
-              <>
-                <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStep2 ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
-                  <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#A586FF]/20 text-sm shadow-sm">
-                    🔁
-                  </span>
-                  <div className="min-w-0 pt-0.5">
-                    {isStep2 && (
-                      <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
-                        <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
-                        Transit di Sini
-                      </span>
-                    )}
-                    <p className="text-sm font-bold text-[#6D42C7]">Titik Transit / Pindah</p>
-                    <p className="mt-0.5 text-xs text-dark/65">
-                      Turun di halte/titik pindah, lanjut ke angkot berikutnya
-                    </p>
-                  </div>
-                </div>
-
-                <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStep3 ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
-                  <span
-                    className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm shadow-sm"
-                    style={{ backgroundColor: (warna[opsi.kode_2] ?? '#1A936F') + '30' }}
-                  >
-                    🚐
-                  </span>
-                  <div className="min-w-0 pt-0.5">
-                    {isStep3 && (
-                      <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
-                        <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
-                        Di Dalam Angkot
-                      </span>
-                    )}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-sm font-bold text-dark">Naik Angkot</span>
-                      <KodeBadge kode={opsi.kode_2} warna={warna[opsi.kode_2]} size="sm" />
-                    </div>
-                    <p className="mt-0.5 text-xs text-dark/65">
-                      Arah {opsi.arah_2} · ±{jarak(opsi.jarak_angkot_2_m)} (±{menitAngkot(opsi.jarak_angkot_2_m)} mnt)
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Jalan kaki ke tujuan */}
-            <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStepAkhir ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
-              <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#EAF4EE] text-sm shadow-sm">
-                🚶
-              </span>
-              <div className="min-w-0 pt-0.5">
-                {isStepAkhir && (
-                  <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
-                    Menuju Tujuan
-                  </span>
-                )}
-                <p className="text-sm text-dark/80">
-                  Turun dari angkot, jalan kaki <strong className="text-dark">{jarak(opsi.jalan_dari_turun_m)}</strong> (±{menitJalan(opsi.jalan_dari_turun_m)} mnt)
+                <p className="mt-0.5 text-[12px] text-dark/60">
+                  Arah {opsi.arah_2} · {jarak(opsi.jarak_angkot_2_m)} (±{menitAngkot(opsi.jarak_angkot_2_m)} mnt)
                 </p>
-              </div>
-            </div>
+              </Tahap>
+            </>
+          )}
+          <Tahap ikon={IconWalk} sorot={sorot(akhir)} label="sekarang">
+            <p className="text-[13.5px] text-dark/80">
+              Turun, jalan kaki <strong className="text-dark">{jarak(opsi.jalan_dari_turun_m)}</strong> (±{menitJalan(opsi.jalan_dari_turun_m)} mnt)
+            </p>
+          </Tahap>
+          <Tahap ikon="B" warna={WARNA_TUJUAN} warnaIkon="#fff">
+            <p className="text-[11.5px] text-dark/50">Sampai di</p>
+            <p className="text-[14px] leading-snug font-semibold text-dark">{tujuan?.nama || 'Lokasi tujuan'}</p>
+          </Tahap>
+        </ol>
 
-            {/* Titik Tujuan */}
-            <div className="relative flex items-start gap-3.5 pl-1">
-              <span
-                className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow-sm"
-                style={{ backgroundColor: WARNA_TUJUAN }}
-              >
-                B
-              </span>
-              <div className="min-w-0 pt-0.5">
-                <p className="text-xs font-semibold text-dark/50">Tiba di Tujuan</p>
-                <p className="text-sm font-bold leading-snug text-dark">{tujuan?.nama || 'Lokasi tujuan'}</p>
-              </div>
-            </div>
-          </div>
+        <div className="mt-5 flex flex-wrap gap-2 border-t border-[#EDF1F2] pt-4">
+          {(transfer ? [opsi.kode_1, opsi.kode_2] : [opsi.kode_trayek]).map((k) => (
+            <Link
+              key={k}
+              to={`/rute/${nomor(k)}`}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border-nav bg-white px-3 py-1.5 text-xs font-semibold text-dark/75 transition hover:bg-mist hover:text-primary"
+            >
+              Lihat rute {nomor(k)} <IconChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          ))}
         </div>
-
-        {/* Tautan Jalur */}
-        <div className="mt-5 border-t border-[#EDF1F2] pt-4">
-          <p className="mb-2 text-xs font-semibold text-dark/60">Eksplorasi Jalur Angkot:</p>
-          <div className="flex flex-wrap gap-2">
-            {(transfer ? [opsi.kode_1, opsi.kode_2] : [opsi.kode_trayek]).map((k) => (
-              <Link
-                key={k}
-                to={`/rute/${nomor(k)}`}
-                className="inline-flex items-center gap-1.5 rounded-full border border-border-nav bg-white px-3 py-1.5 text-xs font-semibold text-dark/80 transition hover:bg-mist hover:text-primary"
-              >
-                <span>Lihat rute Trayek {nomor(k)}</span>
-                <span className="font-bold text-primary">→</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-        <div className="h-4 shrink-0" aria-hidden="true" />
       </div>
     </Card>
   )
