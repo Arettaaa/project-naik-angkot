@@ -19,10 +19,10 @@ export default function DetailRute({
   const p = fitur.properties
   const arah = detail.data?.rute.find((r) => r.rute_id === p.rute_id)
   return (
-    <Floating className="right-3 bottom-24 left-3 flex max-h-[45%] flex-col lg:top-3 lg:bottom-auto lg:left-auto lg:max-h-[calc(100%-250px)] lg:w-[372px]">
-      <Card className="naik-scroll min-h-0 overflow-y-auto">
+    <Floating className="right-3.5 bottom-24 left-3.5 flex max-h-[48%] flex-col lg:top-3 lg:bottom-auto lg:left-auto lg:max-h-[calc(100%-250px)] lg:w-[372px]">
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <CardHeader title="Detail Rute" onClose={onClose} />
-        <div className="px-5 pt-4 pb-5 lg:px-6">
+        <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-4 lg:px-6">
           <div className="flex items-center gap-3">
             <KodeBadge kode={p.kode_trayek} warna={p.warna} size="lg" />
             <div className="min-w-0">
@@ -54,7 +54,7 @@ export default function DetailRute({
             </details>
           )}
         </div>
-        <div className="sticky bottom-0 mt-auto flex flex-col gap-2 bg-white/95 px-5 pt-2 pb-5 backdrop-blur lg:px-6">
+        <div className="shrink-0 border-t border-[#EDF1F2] bg-white/95 px-5 pt-2.5 pb-5 backdrop-blur lg:px-6">
           <button
             onClick={onMulaiSimulasi}
             className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-md transition active:scale-[0.98] ${
