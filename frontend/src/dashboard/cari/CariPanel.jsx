@@ -246,7 +246,7 @@ export default function CariPanel() {
     <>
       {/* Panel Kiri Pencarian: sembunyikan atau ciutkan saat navigasi aktif atau saat ditutup */}
       {!navigasiAktif && panelCariBuka ? (
-        <Floating className="top-3.5 left-3.5 right-3.5 flex max-h-[calc(65%-14px)] flex-col lg:top-3 lg:bottom-3 lg:left-[94px] lg:right-auto lg:max-h-none lg:w-[365px]">
+        <Floating className="top-3.5 left-3.5 right-3.5 flex max-h-[58vh] flex-col lg:top-3 lg:bottom-auto lg:left-[94px] lg:right-auto lg:max-h-[calc(100%-24px)] lg:w-[365px]">
           {panel}
         </Floating>
       ) : !navigasiAktif && !panelCariBuka ? (
