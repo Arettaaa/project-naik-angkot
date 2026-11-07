@@ -1,0 +1,36 @@
+﻿kode_operasional,kode_rencana_sk,jenis,nama_trayek,nomor_lama,nama_trayek_lama,kode_moovit,status,km_jurnal,km_data,tumpang_tindih_jurnal_persen,tumpang_tindih_data_persen,catatan
+01,Trayek 01,AP (nomor baru),Cipinang Gading – Perumahan Yasmin,AK-01,Cipinang Gading – Cipaku – Merdeka,01,beroperasi (jurnal 2021),18.1,28.0,88,79,panjang data +54% dari jurnal -> geometri perlu dicek lapangan
+02,Trayek 02,AP (nomor baru),Warung Nangka – Lawang Saketeng / Bogor Trade Mall,AK-04,Warung Nangka – Rancamaya – Ramayana,02; 04 (nomor lama AK-04),beroperasi (jurnal 2021),24.0,24.4,18,34,
+03,Trayek 03,AP (nomor baru),Cimahpar – Bogor Trade Mall,AK-05,Cimahpar – Pangrango – Ramayana,"03; 05 (nomor lama AK-05, sampai Sukaraja)",beroperasi (jurnal 2021),16.9,16.5,60,71,
+,Trayek 04,rencana SK,Cimahpar – Warung Jambu (Via Jl. A. Sobana),,,,tidak tercatat beroperasi (jurnal 2021 & Moovit),,,,,
+05,Trayek 05,AP (nomor baru),Ciheuleut – Bogor Trade Mall,AK-06,Ciheuleut – Jl. Bangka – Ramayana,06 (nomor lama AK-06),beroperasi (jurnal 2021),9.5,9.8,73,78,
+,Trayek 06,rencana SK,Baranangsiang Indah – Ciheuleut – Warung Jambu – Ciparigi,,,,tidak tercatat beroperasi (jurnal 2021 & Moovit),,,,,
+,Trayek 07,rencana SK,Terminal Bubulak – Merdeka – Ciparigi,,,07,"tidak ada di jurnal 2021, tapi ADA di Moovit -> cek lapangan",,,,,
+08,Trayek 08,AP (nomor baru),Taman Pajajaran – Bantar Kemang – Terminal Merdeka,AK-10,Bantar Kemang – Sukasari – Merdeka,10 (nomor lama AK-10),beroperasi (jurnal 2021),17.4,22.3,97,93,panjang data +28% dari jurnal -> geometri perlu dicek lapangan
+09,Trayek 09,AP (nomor baru),Baranangsiang Indah – Pasar Baru Bogor,AK-11,Pajajaran Indah – Pasar Bogor,09,beroperasi (jurnal 2021),13.7,9.2,49,82,panjang data -33% dari jurnal -> geometri perlu dicek lapangan
+10,Trayek 10,AP (nomor baru),Cimanggu Permai – Pasar Anyar,AK-12,Cimanggu – MA Salmun – Pasar Anyar,12 (nomor lama AK-12),beroperasi (jurnal 2021),10.5,6.5,37,73,panjang data -39% dari jurnal -> geometri perlu dicek lapangan
+,Trayek 11,rencana SK,Curug – Taman Cimanggu – Pasar Anyar,,,11,"tidak ada di jurnal 2021, tapi ADA di Moovit -> cek lapangan",,,,,
+,Trayek 12,rencana SK,Terminal Bubulak – Pabuaran – Cimanggu – Pasar Anyar,,,,tidak tercatat beroperasi (jurnal 2021 & Moovit),,,,,
+13,Trayek 13,AP (nomor baru),Mutiara Bogor Raya – Bogor Trade Mall,AK-13,Bantar Kemang – Jl. Bangka – Ramayana,13,beroperasi (jurnal 2021),15.4,12.7,74,90,
+14,Trayek 14,AP (nomor baru),Sukasari – Pasir Kuda – Terminal Bubulak,AK-14,Sukasari – Pasir Kuda – Bubulak,14,beroperasi (jurnal 2021),23.6,25.3,81,65,
+15,Trayek 15,AP (nomor baru),Terminal Merdeka – Situgede,AK-15,Merdeka – Bubulak – SBJ,15AP,beroperasi (jurnal 2021),15.6,19.9,58,63,panjang data +28% dari jurnal -> geometri perlu dicek lapangan
+,Trayek 16,rencana SK,Mayor Oking (Stasiun KA) – Terminal Bubulak,,,16,"tidak ada di jurnal 2021, tapi ADA di Moovit -> cek lapangan",,,,,
+17,Trayek 17,AP (nomor baru),Salabenda – Pasar Anyar,AK-16,Pasar Anyar – Salabenda,17AP,beroperasi (jurnal 2021),22.7,25.6,100,93,
+18,Trayek 18,AP (nomor baru),Villa Mutiara – Pasar Anyar,,,18,beroperasi (jurnal 2021),27.1,30.3,100,86,mirip AK-16 (skor 0.64) tapi AK-16 lebih cocok ke trayek 17
+19,Trayek 19,AP (nomor baru),Bina Marga – Tanah Baru – Pomad (Ciluar),AK-17,Pomad – Tanah Baru – Bina Marga,19AP,beroperasi (jurnal 2021),17.0,17.2,14,22,
+,Trayek 20,rencana SK,"Bina Marga – Pomad (Ciluar) Via Jl. Rd. Hanafiah, Rambay",,,,tidak tercatat beroperasi (jurnal 2021 & Moovit),,,,,
+21,Trayek 21,AP (nomor baru),Mulyaharja – Lawang Saketeng / Bogor Trade Mall,AK-18,Ramayana – Mulyaharja,,beroperasi (jurnal 2021),18.0,7.2,28,54,panjang data -60% dari jurnal -> geometri perlu dicek lapangan
+22,Trayek 22,AP (nomor baru),Terminal Bubulak – Kencana,AK-19,Terminal Bubulak – Kencana,,beroperasi (jurnal 2021),18.0,20.4,63,52,
+23,Trayek 23,AP (nomor baru),Taman Griya Kencana – Pasar Anyar,,,20 (nomor lama AK-20),beroperasi (jurnal 2021),23.1,25.4,60,65,
+24,Trayek 24,AP (nomor baru),Pasar Anyar – Pondok Rumput,AK-22,Pasar Anyar – Pondok Rumput,24; 22 (nomor lama AK-22),beroperasi (jurnal 2021),8.3,9.0,69,64,
+25,Trayek 25,AP (nomor baru),Bogor Trade Mall – Taman Kencana – Warung Jambu,AK-23,Ramayana – Taman Kencana – Warung Jambu,25; 08A (mirip),beroperasi (jurnal 2021),12.8,13.3,58,61,
+,Trayek 26,rencana SK,Terminal Merdeka – Vila Mutiara Via Cijahe,,,26,"tidak ada di jurnal 2021, tapi ADA di Moovit -> cek lapangan",,,,,
+,Trayek 27,rencana SK,Buntar (SMKN4) – Sukasari Via Cipaku,,,27,"tidak ada di jurnal 2021, tapi ADA di Moovit -> cek lapangan",,,,,
+,Trayek 28,rencana SK,Pabuaran – Lawang Saketeng / Bogor Trade Mall,,,28AP,"tidak ada di jurnal 2021, tapi ADA di Moovit -> cek lapangan",,,,,
+,Trayek 29,rencana SK,Pabuaran – Terminal Merdeka,,,29,"tidak ada di jurnal 2021, tapi ADA di Moovit -> cek lapangan",,,,,"jalurnya mirip AK-01 (Cipinang Gading – Cipaku – Merdeka, skor 0.77)"
+30,Trayek 30,AP (nomor baru),Warung Jambu – BTM,AK-08,Warung Jambu – Jl. Ir. H. Juanda – Ramayana,08 (nomor lama AK-08),beroperasi (jurnal 2021),10.7,12.7,84,82,
+02 AK,,"AK (nomor lama, belum dialihkan)",Sukasari – Terminal Bubulak,AK-02,Sukasari – Terminal Bubulak,2_AK,beroperasi (jurnal 2021),28.8,24.0,100,95,"geometri dari titik GPS GTFS; abaikan_satu_arah=4, garis_lurus=2; luar jaringan ruas kota 1.8 km"
+03 AK,,"AK (nomor lama, belum dialihkan)",Baranangsiang – Terminal Bubulak,AK-03,Baranangsiang – Terminal Bubulak,3_AK,beroperasi (jurnal 2021),20.0,21.4,100,94,"geometri dari titik GPS GTFS; abaikan_satu_arah=4, garis_lurus=2; luar jaringan ruas kota 1.8 km"
+07 AK,,"AK (nomor lama, belum dialihkan)",Ciparigi – Jl. Ir. H. Juanda (Kebun Raya),AK-07,Ciparigi – Terminal Merdeka,07A (koridor mirip),beroperasi (jurnal 2021),13.3,15.0,100,87,geometri dari titik GPS GTFS; abaikan_satu_arah=2
+09 AK,,"AK (nomor lama, belum dialihkan)",Ciparigi – Sukasari,AK-09,Ciparigi – Sukasari,9_AK,beroperasi (jurnal 2021),23.6,19.4,100,99,"geometri dari titik GPS GTFS; titik_luar_jaringan=1, garis_lurus=1, abaikan_satu_arah=1; luar jaringan ruas kota 0.2 km"
+21 AK,,"AK (nomor lama, belum dialihkan)",Baranangsiang – Ciawi,AK-21,Baranangsiang – Ciawi,21AK,beroperasi (jurnal 2021),17.2,15.5,41,50,"geometri dari titik GPS GTFS; titik_luar_jaringan=20, garis_lurus=1; luar jaringan ruas kota 10.3 km"
