@@ -57,5 +57,5 @@ Trayek 28,Berangkat,Pabuaran,Jl. Lawang Saketeng,6872.2,ok,8/8,100.0,,tidak terp
 Trayek 28,Pulang,Jl. Lawang Saketeng,Pabuaran,7284.0,ok,8/8,100.0,,tidak terpetakan: Jl. Pamoyanan
 Trayek 29,Berangkat,Pabuaran,Terminal Merdeka,7601.2,ok,9/9,100.0,,
 Trayek 29,Pulang,Terminal Merdeka,Pabuaran,17257.5,ok,16/17,94.1,Stasiun Bogor,
-Trayek 30,Berangkat,Warung Jambu Timur,Bogor Trade Mall,6421.3,cek:dua_arah,7/8,87.5,Jl. Kumbang,
+Trayek 30,Berangkat,Warung Jambu Timur,Bogor Trade Mall,5768.8,ok,8/8,100.0,,Jl. Kumbang ditambahkan sesuai SK (ruas OSM 902617408) - lewat sisi SV IPB
 Trayek 30,Pulang,Bogor Trade Mall,Warung Jambu,6328.3,ok,10/10,100.0,,
