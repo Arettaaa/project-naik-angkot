@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import { IconChevronDown, IconX } from './icons'
 import { nomorWarga, trayekLama } from './nomorWarga'
+import { warnaTrayek } from './warna'
 
 // Panel melayang di atas peta. Klik/scroll di dalam panel tidak menggerakkan peta.
 export function Floating({ className = '', children, ...rest }) {
@@ -125,18 +126,23 @@ export function OutlineButton({ className = '', children, ...p }) {
 }
 
 // Kotak nomor trayek berwarna (01, 03, ...).
+// isi badge/chip nomor trayek: trayek lama (AK) ditulis dua baris "09" + "LAMA"
+export function IsiNomor({ kode }) {
+  const n = String(kode ?? '').replace(/^Trayek\s*/i, '')
+  if (!trayekLama(kode)) return n
+  return (
+    <span className="flex flex-col items-center leading-none">
+      {n.replace(/AK$/i, '')}
+      <span className="mt-0.5 text-[8.5px] font-semibold tracking-wide uppercase opacity-85">lama</span>
+    </span>
+  )
+}
+
 export function KodeBadge({ kode, warna, size = 'md' }) {
   const s = { sm: 'h-7 w-7 rounded-lg text-xs', md: 'h-11 w-11 rounded-xl text-[17px]', lg: 'h-12 w-12 rounded-2xl text-xl' }[size]
   return (
-    <span className={`inline-flex shrink-0 items-center justify-center font-display font-bold text-white ${s}`} style={{ backgroundColor: warna }}>
-      {trayekLama(kode) ? (
-        <span className="flex flex-col items-center leading-none">
-          {String(kode).replace(/^Trayek\s*/i, '').replace(/AK$/i, '')}
-          <span className="mt-0.5 text-[8.5px] font-semibold tracking-wide uppercase opacity-85">lama</span>
-        </span>
-      ) : (
-        String(kode).replace(/^Trayek\s*/i, '')
-      )}
+    <span className={`inline-flex shrink-0 items-center justify-center font-display font-bold text-white ${s}`} style={{ backgroundColor: warna ?? warnaTrayek(kode) }}>
+      <IsiNomor kode={kode} />
     </span>
   )
 }

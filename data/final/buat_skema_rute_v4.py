@@ -293,6 +293,15 @@ FROM (
 ) x
 WHERE r.kode_trayek = x.kode_trayek""",
 
+# ---------- tarif: trayek baru (mis. trayek lama AK) ikut tarif flat yang paling umum ----------
+"""INSERT INTO naik.tarif_rute (kode_trayek, tarif, keterangan)
+SELECT DISTINCT r.kode_trayek,
+       COALESCE((SELECT tarif FROM naik.tarif_rute WHERE tarif IS NOT NULL
+                 GROUP BY tarif ORDER BY COUNT(*) DESC, tarif LIMIT 1), 5000),
+       'Tarif umum (otomatis)'
+FROM naik.rute r
+ON CONFLICT (kode_trayek) DO NOTHING""",
+
 # ---------- view buat backend / peta ----------
 """CREATE OR REPLACE VIEW naik.v_rute_peta AS
 SELECT r.rute_id, r.kode_trayek, r.arah, r.nama_trayek, r.asal, r.tujuan, r.lintasan,
@@ -309,6 +318,9 @@ SELECT j.ruas_id, j.nama_tampil AS nama_jalan, j.nama_jalan AS nama_osm, j.sumbe
          WHERE rr.ruas_id = j.ruas_id) AS trayek,
        j.geom
 FROM naik.ruas_jalan j JOIN naik.hasil_kepadatan h ON h.ruas_id = j.ruas_id""",
+
+# cache rute milik backend (/api/rekomendasi) dibuang supaya dibuat ulang dari data terbaru
+"DROP MATERIALIZED VIEW IF EXISTS naik.mv_transfer_rute, naik.mv_rute_garis CASCADE",
 ]
 
 CHECKS = [
@@ -350,7 +362,7 @@ for row in conn.executeSql(
     print(f"  {row[0]:>3} {row[1]}")
 
 print("\nSelesai. Refresh di Browser > PostgreSQL > NAIK ANGKOT > schema naik.")
-print("Catatan: isi naik.tarif_rute secara manual (kode_trayek, tarif, tahun_data, sumber_id).")
+print("Catatan: trayek tanpa tarif otomatis diisi tarif umum; ubah manual di naik.tarif_rute kalau perlu.")
 
 print("\nNama ruas jalan:")
 for row in conn.executeSql("SELECT sumber_nama, COUNT(*) FROM naik.ruas_jalan GROUP BY 1 ORDER BY 2 DESC"):

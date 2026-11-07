@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Card, CardHeader, Muat, OutlineButton, PrimaryButton, Select } from '../ui'
 import { IconFilter } from '../icons'
-import { nomor, uniq } from '../lib'
+import { uniq } from '../lib'
+import { nomorTampil } from '../nomorWarga'
 
 // Panel Filter Rute: Nomor Rute, Asal, Tujuan.
 export default function FilterRute({ trayek, filter, onTerapkan, onReset, jumlahHasil, onClose, onRetry }) {
@@ -20,7 +21,7 @@ export default function FilterRute({ trayek, filter, onTerapkan, onReset, jumlah
           <option value="">Semua</option>
           {trayek.data?.map((t) => (
             <option key={t.kode_trayek} value={t.kode_trayek}>
-              {nomor(t.kode_trayek)} · {t.nama_trayek}
+              {nomorTampil(t.kode_trayek)} · {t.nama_trayek}
             </option>
           ))}
         </Select>

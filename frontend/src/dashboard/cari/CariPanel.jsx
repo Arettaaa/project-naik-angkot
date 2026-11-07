@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { warnaTrayek } from '../warna'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CircleMarker, GeoJSON, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
@@ -64,7 +65,11 @@ const WARNA_TUJUAN = '#FFAB2E'
 
 export default function CariPanel() {
   const { trayek } = useDashboard()
-  const warna = useMemo(() => Object.fromEntries((trayek.data ?? []).map((t) => [t.kode_trayek, t.warna])), [trayek.data])
+  // warna per kode; trayek yang belum ada di daftar (mis. cache /api/trayek masih lama) tetap dapat warna dari palet
+  const warna = useMemo(() => {
+    const peta = Object.fromEntries((trayek.data ?? []).map((t) => [t.kode_trayek, t.warna]))
+    return new Proxy(peta, { get: (o, k) => (typeof k === 'string' ? (o[k] ?? warnaTrayek(k)) : o[k]) })
+  }, [trayek.data])
 
   const [asal, setAsal] = useState(null)
   const [tujuan, setTujuan] = useState(null)
@@ -654,7 +659,7 @@ function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMu
               <Tahap ikon={IconTransfer} warna="#EFE9FF" warnaIkon="#6D42C7" sorot={sorot(2)} label="pindah">
                 <p className="text-[13.5px] font-semibold text-[#5B34B0]">Pindah angkot</p>
                 <p className="mt-0.5 text-[12px] text-dark/60">
-                  Turun, jalan {opsi.jalan_pindah_m != null ? jarak(opsi.jalan_pindah_m) : 'sebentar'} ke jalur {nomor(opsi.kode_2)}
+                  Turun, jalan {opsi.jalan_pindah_m != null ? jarak(opsi.jalan_pindah_m) : 'sebentar'} ke jalur {nomorLengkap(opsi.kode_2)}
                 </p>
               </Tahap>
               <Tahap ikon={IconBus} warna={warna[opsi.kode_2] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(3)} label="di angkot">
@@ -686,7 +691,7 @@ function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMu
               to={`/rute/${nomor(k)}`}
               className="inline-flex items-center gap-1.5 rounded-full border border-border-nav bg-white px-3 py-1.5 text-xs font-semibold text-dark/75 transition hover:bg-mist hover:text-primary"
             >
-              Lihat rute {nomor(k)} <IconChevronRight className="h-3.5 w-3.5" />
+              Lihat rute {nomorLengkap(k)} <IconChevronRight className="h-3.5 w-3.5" />
             </Link>
           ))}
         </div>
@@ -730,7 +735,7 @@ function RuteOpsi({ opsi, warna, asal, tujuan }) {
       )}
       {tt && (
         <CircleMarker center={tt} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#A586FF', fillOpacity: 1 }}>
-          <Tooltip permanent direction="top" offset={[0, -8]}>Pindah ke {nomor(kode[1])}</Tooltip>
+          <Tooltip permanent direction="top" offset={[0, -8]}>Pindah ke {nomorLengkap(kode[1])}</Tooltip>
         </CircleMarker>
       )}
       {akhir && (

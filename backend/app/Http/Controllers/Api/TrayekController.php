@@ -14,6 +14,10 @@ use Illuminate\Support\Facades\DB;
 class TrayekController extends Controller
 {
     /** Ekspresi garis tunggal dari MultiLineString (dipakai ST_LineLocatePoint). */
+    /** Tarif flat yang paling banyak dipakai di naik.tarif_rute (default Rp5.000) untuk trayek yang belum diisi. */
+    private const TARIF_UMUM = "SELECT COALESCE((SELECT tarif FROM naik.tarif_rute WHERE tarif IS NOT NULL
+                                 GROUP BY tarif ORDER BY COUNT(*) DESC, tarif LIMIT 1), 5000) AS tarif";
+
     private const LINE = "CASE WHEN GeometryType(ST_LineMerge(g.geom)) = 'LINESTRING'
                                THEN ST_LineMerge(g.geom) ELSE ST_GeometryN(ST_LineMerge(g.geom), 1) END";
 
@@ -108,7 +112,7 @@ class TrayekController extends Controller
                    '#' || substr(md5(r.kode_trayek), 1, 6) AS warna,
                    json_agg(json_build_object('rute_id', r.rute_id, 'arah', r.arah,
                             'asal', r.asal, 'tujuan', r.tujuan) ORDER BY r.rute_id) AS arah,
-                   MAX(t.tarif) AS tarif, MIN(s.nama_sumber) AS sumber
+                   COALESCE(MAX(t.tarif), (" . self::TARIF_UMUM . ")) AS tarif, MIN(s.nama_sumber) AS sumber
             FROM naik.rute r
             LEFT JOIN naik.tarif_rute t ON t.kode_trayek = r.kode_trayek
             LEFT JOIN naik.sumber_data s ON s.sumber_id = r.sumber_id
@@ -132,10 +136,11 @@ class TrayekController extends Controller
                      'properties', json_build_object(
                         'rute_id', v.rute_id, 'kode_trayek', v.kode_trayek, 'arah', v.arah,
                         'nama_trayek', v.nama_trayek, 'asal', v.asal, 'tujuan', v.tujuan,
-                        'warna', v.warna, 'panjang_m', v.panjang_m, 'tarif', t.tarif)
+                        'warna', v.warna, 'panjang_m', v.panjang_m, 'tarif', COALESCE(t.tarif, d.tarif))
                    ) ORDER BY v.rute_id), '[]'::json))::text AS fc
             FROM naik.v_rute_peta v
             LEFT JOIN naik.tarif_rute t ON t.kode_trayek = v.kode_trayek
+            CROSS JOIN (" . self::TARIF_UMUM . ") d
             WHERE (?::text IS NULL OR v.kode_trayek = ?)", [$kode, $kode]);
         return $this->geojson($row->fc);
     }
@@ -176,6 +181,10 @@ class TrayekController extends Controller
         }
         $kodeDb = $rute[0]->kode_trayek ?? $kodeTrayek;
         $tarif = DB::selectOne("SELECT tarif, keterangan FROM naik.tarif_rute WHERE kode_trayek = ? OR kode_trayek = ?", [$kodeDb, $input]);
+        if (!$tarif || $tarif->tarif === null) {
+            $tarif = (object) ['tarif' => DB::selectOne(self::TARIF_UMUM)->tarif,
+                               'keterangan' => $tarif->keterangan ?? 'Tarif umum angkot Kota Bogor'];
+        }
         return response()->json([
             'kode_trayek' => $kodeDb,
             'warna' => '#' . substr(md5($kodeDb), 0, 6),
@@ -236,6 +245,8 @@ class TrayekController extends Controller
      * Garis rute siap hitung (UTM 48S, meter) + posisi titik transfer di tiap rute.
      * Dibuat sekali sebagai materialized view; ikut terhapus otomatis saat buat_skema_rute_v4.py
      * membangun ulang naik.rute / naik.titik_transfer (DROP ... CASCADE), lalu dibuat lagi di request berikutnya.
+     * View cuma menyimpan geometri: arah & nama trayek selalu diambil langsung dari naik.rute, jadi label
+     * tidak pernah basi. Kalau jumlah rute / titik transfer berubah, view di-refresh otomatis.
      */
     private function siapkanGarisRute(): void
     {
@@ -243,9 +254,29 @@ class TrayekController extends Controller
         $ada = DB::selectOne("SELECT to_regclass('naik.mv_rute_garis') IS NOT NULL AS g,
                                      to_regclass('naik.mv_transfer_rute') IS NOT NULL AS t");
         try {
+            if ($ada->g) {
+                // versi lama view (masih menyimpan arah) atau isinya beda dari tabel -> bangun ulang
+                $cek = DB::selectOne("SELECT
+                    EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'naik.mv_rute_garis'::regclass
+                            AND attname = 'arah' AND NOT attisdropped) AS lama,
+                    (SELECT COUNT(*) FROM naik.mv_rute_garis) <> (SELECT COUNT(*) FROM naik.rute_geometri) AS beda_g,
+                    " . ($ada->t ? "(SELECT COUNT(DISTINCT transfer_id) FROM naik.mv_transfer_rute)
+                        <> (SELECT COUNT(*) FROM naik.titik_transfer)" : 'false') . " AS beda_t");
+                if ($cek->lama) {
+                    DB::statement('DROP MATERIALIZED VIEW IF EXISTS naik.mv_rute_garis CASCADE');
+                    $ada->g = $ada->t = false;
+                } elseif ($cek->beda_g) {
+                    DB::statement('REFRESH MATERIALIZED VIEW naik.mv_rute_garis');
+                    if ($ada->t) {
+                        DB::statement('REFRESH MATERIALIZED VIEW naik.mv_transfer_rute');
+                    }
+                } elseif ($cek->beda_t) {
+                    DB::statement('REFRESH MATERIALIZED VIEW naik.mv_transfer_rute');
+                }
+            }
             if (!$ada->g) {
                 DB::statement("CREATE MATERIALIZED VIEW IF NOT EXISTS naik.mv_rute_garis AS
-                    SELECT ru.rute_id, ru.kode_trayek, ru.arah, ru.nama_trayek,
+                    SELECT ru.rute_id, ru.kode_trayek,
                            ST_Transform($line, 32748) AS g,
                            ST_Length(ST_Transform($line, 32748)) AS len
                     FROM naik.rute ru JOIN naik.rute_geometri g ON g.rute_id = ru.rute_id");
@@ -298,12 +329,14 @@ class TrayekController extends Controller
         $base = "
             p AS (SELECT ST_Transform(ST_SetSRID(ST_MakePoint(?, ?), 4326), 32748) AS a,
                          ST_Transform(ST_SetSRID(ST_MakePoint(?, ?), 4326), 32748) AS b, ?::float8 AS rad),
-            ra AS (SELECT r.rute_id, r.kode_trayek, r.arah, r.nama_trayek, r.g, r.len,
+            ra AS (SELECT r.rute_id, r.kode_trayek, ru.arah, ru.nama_trayek, r.g, r.len,
                           ST_LineLocatePoint(r.g, p.a) AS pa, ST_Distance(r.g, p.a) AS da
-                   FROM naik.mv_rute_garis r, p WHERE ST_DWithin(r.g, p.a, p.rad)),
-            rb AS (SELECT r.rute_id, r.kode_trayek, r.arah, r.g, r.len,
+                   FROM naik.mv_rute_garis r JOIN naik.rute ru ON ru.rute_id = r.rute_id, p
+                   WHERE ST_DWithin(r.g, p.a, p.rad)),
+            rb AS (SELECT r.rute_id, r.kode_trayek, ru.arah, r.g, r.len,
                           ST_LineLocatePoint(r.g, p.b) AS pb, ST_Distance(r.g, p.b) AS db
-                   FROM naik.mv_rute_garis r, p WHERE ST_DWithin(r.g, p.b, p.rad))";
+                   FROM naik.mv_rute_garis r JOIN naik.rute ru ON ru.rute_id = r.rute_id, p
+                   WHERE ST_DWithin(r.g, p.b, p.rad))";
 
         // ---- 1 angkot: satu pilihan terbaik per trayek ----
         $langsung = DB::select("
@@ -320,8 +353,9 @@ class TrayekController extends Controller
                    ROUND(da) AS jalan_ke_naik_m, ROUND(db) AS jalan_dari_turun_m, ROUND(len) AS jarak_angkot_m,
                    ROUND(menit) AS menit,
                    ST_AsGeoJSON(ST_Transform(ST_LineSubstring(g, pa, pb), 4326), 6) AS segmen,
-                   t.tarif
+                   COALESCE(t.tarif, d.tarif) AS tarif
             FROM best LEFT JOIN naik.tarif_rute t ON t.kode_trayek = best.kode_trayek
+            CROSS JOIN (" . self::TARIF_UMUM . ") d
             ORDER BY best.menit
             LIMIT 5", $params);
 
@@ -353,9 +387,10 @@ class TrayekController extends Controller
                    ST_AsGeoJSON(tt.geom, 6) AS titik_transfer,
                    ST_AsGeoJSON(ST_Transform(ST_LineSubstring(ga, pa, fa), 4326), 6) AS segmen_1,
                    ST_AsGeoJSON(ST_Transform(ST_LineSubstring(gb, fb, pb), 4326), 6) AS segmen_2,
-                   COALESCE(t1.tarif, 0) + COALESCE(t2.tarif, 0) AS tarif
+                   COALESCE(t1.tarif, d.tarif) + COALESCE(t2.tarif, d.tarif) AS tarif
             FROM best
             JOIN naik.titik_transfer tt ON tt.transfer_id = best.transfer_id
+            CROSS JOIN (" . self::TARIF_UMUM . ") d
             LEFT JOIN naik.tarif_rute t1 ON t1.kode_trayek = ka
             LEFT JOIN naik.tarif_rute t2 ON t2.kode_trayek = kb
             ORDER BY menit

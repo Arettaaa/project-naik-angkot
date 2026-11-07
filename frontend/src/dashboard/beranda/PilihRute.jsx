@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import { Muat } from '../ui'
 import { IconChevronRight } from '../icons'
 import { nomor } from '../lib'
+import { IsiNomor } from '../ui'
+import { nomorTampil } from '../nomorWarga'
 
 // Chip nomor rute berwarna (pilih lebih dari satu, langsung tampil di peta).
 export function ChipNomor({ t, aktif, onClick, className = '' }) {
@@ -14,7 +16,7 @@ export function ChipNomor({ t, aktif, onClick, className = '' }) {
       className={`flex h-10 shrink-0 items-center justify-center rounded-xl border-2 font-display text-[15px] font-bold transition active:scale-95 ${className}`}
       style={aktif ? { backgroundColor: t.warna, borderColor: t.warna, color: '#fff' } : { borderColor: t.warna + '55', color: t.warna, backgroundColor: t.warna + '0F' }}
     >
-      {nomor(t.kode_trayek)}
+      <IsiNomor kode={t.kode_trayek} />
     </button>
   )
 }
@@ -34,7 +36,7 @@ export function RuteTerpilih({ trayek, dipilih }) {
             <span className="h-8 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: t.warna }} />
             <span className="min-w-0 flex-1">
               <span className="block text-[12px] font-semibold" style={{ color: t.warna }}>
-                Rute {nomor(t.kode_trayek)}
+                Rute {nomorTampil(t.kode_trayek)}
               </span>
               <span className="block truncate text-[14px] font-medium">{t.nama_trayek}</span>
             </span>

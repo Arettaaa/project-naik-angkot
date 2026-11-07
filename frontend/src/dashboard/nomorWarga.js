@@ -19,6 +19,9 @@ export const nomorWarga = (kode) => NOMOR_WARGA[nomor(kode)] ?? null
 // Trayek lama di luar SK yang masih jalan (kode berakhiran AK, mis. 09AK = "09" Ciparigi – Sukasari/Ekalokasari).
 export const trayekLama = (kode) => /AK$/i.test(nomor(kode))
 
+// nomor untuk ditampilkan: "09AK" -> "09 lama", nomor SK apa adanya
+export const nomorTampil = (kode) => (trayekLama(kode) ? `${nomor(kode).replace(/AK$/i, '')} lama` : nomor(kode))
+
 /** "03 (dulu 05)" atau "03" */
 export const nomorLengkap = (kode) => {
   if (trayekLama(kode)) return `${nomor(kode).replace(/AK$/i, '')} (lama)`

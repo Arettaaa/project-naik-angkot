@@ -68,6 +68,8 @@ python bangun_operasional.py
      19, 21, 22, 23, 24, 25, 30. Geometrinya diambil dari `../final` (sudah ada).
    - **5 trayek AK** (nomor lama yang belum dialihkan): 02 AK, 03 AK, 07 AK, 09 AK, 21 AK.
      Trayek ini tidak ada di data rencana, jadi dibentuk di sini.
+     Di data final (`../final/tambah_trayek_lama.py`) hanya 4 yang dipakai: 02, 03, 09, dan 21 lama.
+     07 AK tidak dimasukkan karena di Moovit tidak ada padanan yang jelas.
 2. **Geometri trayek AK** berasal dari titik GPS hasil naik angkot langsung (feed GTFS bogor-angkot-gtfs):
    - Satu putaran dipecah menjadi Berangkat dan Pulang di titik terminal.
    - Tiap titik dicocokkan ke jaringan jalan berarah (ruas OSM data final + atribut `oneway`).

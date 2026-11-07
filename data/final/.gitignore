@@ -1,0 +1,4 @@
+# unduhan OSM sementara dari sambung_garis_lurus.py
+osm_unduhan/
+__pycache__/
+*.png

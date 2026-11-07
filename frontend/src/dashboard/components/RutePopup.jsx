@@ -1,9 +1,9 @@
 import { Popup } from 'react-leaflet'
 import { jarak, menitAngkot, rupiah } from '../../utils/format'
 import { IconChevronRight, IconPlay } from '../icons'
-import { nomor } from '../lib'
+import { KodeBadge } from '../ui'
 import TutupPopup from './TutupPopup'
-import { nomorWarga } from '../nomorWarga'
+import { nomorTampil, nomorWarga } from '../nomorWarga'
 
 // Kartu popup rute: nomor berwarna, asal → tujuan, arah, panjang/waktu/tarif, tombol detail (+ simulasi bila ada).
 export default function RutePopup({ posisi, rute, onDetail, onSimulasi, onClose }) {
@@ -19,12 +19,10 @@ export default function RutePopup({ posisi, rute, onDetail, onSimulasi, onClose 
     <Popup position={posisi} className="naik-popup" closeButton={false} autoPan autoPanPadding={[24, 90]} eventHandlers={{ remove: onClose }}>
       <div className="w-[268px] p-4">
         <div className="flex items-start gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl font-display text-[17px] font-bold text-white" style={{ backgroundColor: warna }}>
-            {nomor(rute.kode_trayek)}
-          </span>
+          <KodeBadge kode={rute.kode_trayek} warna={warna} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-[12px] font-semibold" style={{ color: warna }}>
-              {rute.arah || `Rute ${nomor(rute.kode_trayek)}`}
+              {rute.arah || `Rute ${nomorTampil(rute.kode_trayek)}`}
             </p>
             <p className="mt-0.5 text-[14.5px] leading-snug font-semibold text-dark">
               {rute.asal} <span className="text-dark/40">→</span> {rute.tujuan}

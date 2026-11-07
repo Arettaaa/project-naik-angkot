@@ -7,7 +7,7 @@ import {
   IconTransfer, IconVolume, IconVolumeOff, IconWalk, IconX,
 } from '../icons'
 import { Lapisan } from '../ui'
-import { nomorLengkap } from '../nomorWarga'
+import { nomorLengkap, nomorTampil } from '../nomorWarga'
 import { arahPada, dekatiSudut, halus, ikonAngkot, ikonJalan, ikutiKamera, jarakM, putarPenanda, titikPada, useJam } from '../simulasi'
 
 // Simulasi perjalanan (animasi, BUKAN pelacakan posisi asli): jalan kaki -> naik angkot -> (pindah) -> jalan kaki.
@@ -36,20 +36,20 @@ function susunLangkahNavigasi(opsi, asal, tujuan, warna) {
   const tahap = [
     {
       tipe: 'jalan', titik: [A, g1[0]], jarakM: opsi.jalan_ke_naik_m,
-      judul: 'Jalan ke titik naik', instruksi: `Jalan ke jalur angkot ${nomor(k1)}`,
+      judul: 'Jalan ke titik naik', instruksi: `Jalan ke jalur angkot ${nomorTampil(k1)}`,
       sub: 'Tunggu angkot di tepi jalan',
     },
     {
       tipe: 'angkot', titik: g1, kode: k1, warna: warna[k1], jarakM: transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m,
       judul: `Naik angkot ${nomorLengkap(k1)}`, instruksi: `Naik angkot ${nomorLengkap(k1)} arah ${transfer ? opsi.arah_1 : opsi.arah}`,
-      sub: transfer ? `Turun di titik pindah ke ${nomor(opsi.kode_2)}` : 'Turun di dekat tujuan',
+      sub: transfer ? `Turun di titik pindah ke ${nomorTampil(opsi.kode_2)}` : 'Turun di dekat tujuan',
     },
   ]
   if (transfer && g2?.length) {
     tahap.push(
       {
         tipe: 'transit', titik: tt ? [g1.at(-1), tt, g2[0]] : [g1.at(-1), g2[0]], jarakM: opsi.jalan_pindah_m,
-        judul: 'Pindah angkot', instruksi: `Turun, pindah ke angkot ${nomor(opsi.kode_2)}`, sub: 'Jalan sebentar ke jalur angkot berikutnya',
+        judul: 'Pindah angkot', instruksi: `Turun, pindah ke angkot ${nomorTampil(opsi.kode_2)}`, sub: 'Jalan sebentar ke jalur angkot berikutnya',
       },
       {
         tipe: 'angkot', titik: g2, kode: opsi.kode_2, warna: warna[opsi.kode_2], jarakM: opsi.jarak_angkot_2_m,

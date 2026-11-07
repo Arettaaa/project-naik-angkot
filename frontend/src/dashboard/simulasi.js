@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import L from 'leaflet'
+import { nomorTampil } from './nomorWarga'
 
 // Mesin animasi simulasi perjalanan (dipakai menu Rute & menu Cari).
 // Posisi penanda, jejak, dan kamera diperbarui langsung lewat Leaflet setiap frame (requestAnimationFrame),
@@ -149,7 +150,7 @@ export function ikonAngkot(kode, warna = '#1A936F') {
         <span class="naik-penanda-denyut"></span>
         <span class="naik-arah"><i></i></span>
         <span class="naik-penanda-badan">${SVG_BUS}</span>
-        <b>${esc(kode)}</b>
+        <b>${esc(nomorTampil(kode))}</b>
       </div>`,
   })
 }

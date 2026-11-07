@@ -6,14 +6,16 @@ Trayek bernomor lama ini belum dialihkan ke nomor SK dan masih jalan di lapangan
 ../operasional/trayek_operasional.geojson (titik GPS naik angkot langsung, bogor-angkot-gtfs 2016-2019).
 
 Kode di data final: "Trayek 02AK", "Trayek 03AK", ... (tampil di aplikasi sebagai "02 lama").
-30 trayek SK tidak diubah. Script aman dijalankan ulang (trayek AK lama dihapus dulu, lalu ditambah lagi).
+30 trayek SK tidak diubah. Script aman dijalankan ulang (semua trayek AK dihapus dulu, lalu ditambah lagi).
+
+07 AK (Ciparigi – Jl. Ir. H. Juanda) TIDAK dimasukkan: di Moovit tidak ada padanan yang jelas
+(cuma "07A" yang koridornya mirip) dan tidak disebut warga/teman SV. Datanya tetap ada di folder operasional.
 
     cd data/final
     python tambah_trayek_lama.py
-Setelah itu jalankan muat_final_qgis.py lalu buat_skema_rute_v4.py di QGIS, dan isi tarif:
-    INSERT INTO naik.tarif_rute (kode_trayek, tarif)
-    SELECT DISTINCT kode_trayek, 5000 FROM naik.rute WHERE kode_trayek LIKE '%AK'
-    ON CONFLICT (kode_trayek) DO NOTHING;
+    python sambung_garis_lurus.py      # sambungkan potongan garis lurus 02/03/21 lama ke jalan OSM
+Setelah itu jalankan muat_final_qgis.py lalu buat_skema_rute_v4.py di QGIS
+(tarif trayek lama otomatis ikut tarif umum).
 """
 import collections
 import json
@@ -26,11 +28,10 @@ KP = os.path.join(SINI, "kepadatan_trayek_FINAL.geojson")
 OPS = os.path.join(SINI, "..", "operasional", "trayek_operasional.geojson")
 
 LAMA = {  # kode operasional -> (kode final, nama, kode Moovit, catatan)
-    "02 AK": ("Trayek 02AK", "Sukasari – Terminal Bubulak", "2_AK", "Jl. Gunung Batu belum ada di jaringan ruas (garis lurus ±0,9 km)"),
-    "03 AK": ("Trayek 03AK", "Baranangsiang – Terminal Bubulak", "3_AK", "Jl. Gunung Batu belum ada di jaringan ruas (garis lurus ±0,9 km)"),
-    "07 AK": ("Trayek 07AK", "Ciparigi – Jl. Ir. H. Juanda", "07A (mirip)", "padanan Moovit belum pasti"),
+    "02 AK": ("Trayek 02AK", "Sukasari – Terminal Bubulak", "2_AK", "lewat Jl. Gunung Batu"),
+    "03 AK": ("Trayek 03AK", "Baranangsiang – Terminal Bubulak", "3_AK", "lewat Jl. Gunung Batu"),
     "09 AK": ("Trayek 09AK", "Ciparigi – Sukasari (Ekalokasari)", "9_AK", "lewat Jl. Lodaya - Jl. Kumbang (SV IPB)"),
-    "21 AK": ("Trayek 21AK", "Baranangsiang – Ciawi", "21AK", "Jl. Raya Tajur - Ciawi di luar jaringan ruas kota (garis lurus ±5 km)"),
+    "21 AK": ("Trayek 21AK", "Baranangsiang – Ciawi", "21AK", "lewat Jl. Raya Tajur sampai Ciawi"),
 }
 SUMBER = ("trayek lama di luar SK yang masih beroperasi (Moovit Nov 2026, keterangan warga/mahasiswa SV IPB); "
           "geometri titik GPS bogor-angkot-gtfs 2016-2019")
@@ -50,8 +51,10 @@ def main():
     tr = json.load(open(TR, encoding="utf-8"))
     kp = json.load(open(KP, encoding="utf-8"))
     ops = json.load(open(OPS, encoding="utf-8"))
-    kode_lama = {v[0] for v in LAMA.values()}
-    tr["features"] = [f for f in tr["features"] if f["properties"]["kode_trayek"] not in kode_lama]
+    def lama(k):  # semua kode trayek lama (termasuk yang sudah tidak dipakai, mis. 07AK)
+        return str(k).strip().upper().endswith("AK")
+
+    tr["features"] = [f for f in tr["features"] if not lama(f["properties"]["kode_trayek"])]
 
     # simpul ruas (rute GPS menempel ke simpul ruas dengan selisih presisi beberapa cm)
     grid = collections.defaultdict(list)
@@ -94,7 +97,7 @@ def main():
     for f in kp["features"]:
         cs = [kunci(c) for c in f["geometry"]["coordinates"]]
         s = {frozenset(e) for e in zip(cs, cs[1:])}
-        daftar = [t.strip() for t in f["properties"]["trayek"].split(",") if t.strip() and t.strip() not in kode_lama]
+        daftar = [t.strip() for t in f["properties"]["trayek"].split(",") if t.strip() and not lama(t)]
         daftar += [k for k, ss in sisi.items() if s & ss]
         daftar = sorted(set(daftar))
         n = len(daftar)
