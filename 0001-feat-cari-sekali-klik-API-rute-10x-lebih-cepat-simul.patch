@@ -1,0 +1,3655 @@
+From 290c57c697b16c9caedff6284a13673a0428927d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 7 Nov 2026 22:12:23 +0700
+Subject: [PATCH] feat: cari sekali klik + API rute 10x lebih cepat + simulasi
+ angkot mulus
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Cari rute
+- otomatis mencari begitu asal & tujuan terisi (tanpa tombol), klik peta lebih peka
+- jarak jalan kaki otomatis (s.d. 800 m) dan hasil diurutkan dari perkiraan waktu tercepat
+- info "dekat, jalan kaki saja" bila tujuan < 1,2 km; tampilan HP tidak saling menutupi
+- klik di panel simulasi tidak lagi tembus ke peta
+
+API /rekomendasi
+- garis rute & titik transfer dihitung sekali (materialized view naik.mv_rute_garis &
+  naik.mv_transfer_rute, dibuat otomatis); ±0,5–0,7 s -> ±0,05 s per pencarian
+- opsi pindah disembunyikan bila jauh lebih lambat dari angkot langsung
+
+Simulasi (bukan realtime)
+- mesin animasi requestAnimationFrame tanpa render ulang React: angkot mulus,
+  arah menghadap jalan, kamera mengikuti pelan, menunggu angkot, gas-rem halus
+- teks "Navigasi Realtime" diganti "Simulasi perjalanan", emoji diganti ikon SVG
+- menu Rute: popup & panel detail lebih rapi, simulasi bisa dihentikan
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01C3HB5NRrpwX98c8uD43zvS
+---
+ .../Http/Controllers/Api/TrayekController.php |  162 ++-
+ frontend/src/dashboard/cari/CariPanel.jsx     |  591 ++++------
+ .../src/dashboard/cari/NavigasiSimulasi.jsx   | 1008 ++++++-----------
+ .../src/dashboard/components/RutePopup.jsx    |   61 +-
+ frontend/src/dashboard/dashboard.css          |   86 ++
+ frontend/src/dashboard/icons.jsx              |   11 +
+ frontend/src/dashboard/rute/AnimasiRute.jsx   |  771 ++++---------
+ frontend/src/dashboard/rute/DetailRute.jsx    |   67 +-
+ frontend/src/dashboard/rute/JalurRute.jsx     |   19 +-
+ frontend/src/dashboard/rute/RutePanel.jsx     |   70 +-
+ frontend/src/dashboard/simulasi.js            |  170 +++
+ frontend/src/dashboard/ui.jsx                 |   15 +
+ 12 files changed, 1363 insertions(+), 1668 deletions(-)
+ create mode 100644 frontend/src/dashboard/simulasi.js
+
+diff --git a/backend/app/Http/Controllers/Api/TrayekController.php b/backend/app/Http/Controllers/Api/TrayekController.php
+index 863a436..2a0d017 100644
+--- a/backend/app/Http/Controllers/Api/TrayekController.php
++++ b/backend/app/Http/Controllers/Api/TrayekController.php
+@@ -233,8 +233,48 @@ public function ringkasan(): JsonResponse
+     }
+ 
+     /**
+-     * GET /api/rekomendasi?asal=-6.59,106.79&tujuan=-6.57,106.81&radius=400
+-     * Rute langsung (1 angkot) dan rute 1x transfer (2 angkot), urut dari yang paling enak.
++     * Garis rute siap hitung (UTM 48S, meter) + posisi titik transfer di tiap rute.
++     * Dibuat sekali sebagai materialized view; ikut terhapus otomatis saat buat_skema_rute_v4.py
++     * membangun ulang naik.rute / naik.titik_transfer (DROP ... CASCADE), lalu dibuat lagi di request berikutnya.
++     */
++    private function siapkanGarisRute(): void
++    {
++        $line = self::LINE;
++        $ada = DB::selectOne("SELECT to_regclass('naik.mv_rute_garis') IS NOT NULL AS g,
++                                     to_regclass('naik.mv_transfer_rute') IS NOT NULL AS t");
++        try {
++            if (!$ada->g) {
++                DB::statement("CREATE MATERIALIZED VIEW IF NOT EXISTS naik.mv_rute_garis AS
++                    SELECT ru.rute_id, ru.kode_trayek, ru.arah, ru.nama_trayek,
++                           ST_Transform($line, 32748) AS g,
++                           ST_Length(ST_Transform($line, 32748)) AS len
++                    FROM naik.rute ru JOIN naik.rute_geometri g ON g.rute_id = ru.rute_id");
++                DB::statement("CREATE INDEX IF NOT EXISTS idx_mv_rute_garis_g ON naik.mv_rute_garis USING GIST (g)");
++                DB::statement("CREATE INDEX IF NOT EXISTS idx_mv_rute_garis_id ON naik.mv_rute_garis (rute_id)");
++            }
++            if (!$ada->t) {
++                DB::statement("CREATE MATERIALIZED VIEW IF NOT EXISTS naik.mv_transfer_rute AS
++                    SELECT tt.transfer_id, r.rute_id, r.kode_trayek,
++                           ST_LineLocatePoint(r.g, ST_Transform(tt.geom, 32748)) AS f,
++                           ST_Distance(r.g, ST_Transform(tt.geom, 32748)) AS d
++                    FROM naik.titik_transfer tt
++                    JOIN naik.mv_rute_garis r ON r.kode_trayek IN (tt.trayek_a, tt.trayek_b)");
++                DB::statement("CREATE INDEX IF NOT EXISTS idx_mv_transfer_rute_rute ON naik.mv_transfer_rute (rute_id, f)");
++                DB::statement("CREATE INDEX IF NOT EXISTS idx_mv_transfer_rute_tt ON naik.mv_transfer_rute (transfer_id)");
++            }
++        } catch (\Throwable $e) {
++            // dua request bersamaan membuat view yang sama -> yang kalah cukup memakai hasil yang menang
++            if (!str_contains($e->getMessage(), 'already exists')) {
++                throw $e;
++            }
++        }
++    }
++
++    /**
++     * GET /api/rekomendasi?asal=-6.59,106.79&tujuan=-6.57,106.81[&radius=800]
++     * Rute langsung (1 angkot) dan 1x pindah (2 angkot), diurutkan dari perkiraan waktu tempuh tercepat.
++     * Jarak jalan kaki otomatis: semua jalur sampai `radius` (default 800 m) dipertimbangkan, tapi
++     * jalan kaki dihitung lambat (75 m/menit) sehingga jalur yang dekat tetap menang.
+      */
+     public function rekomendasi(Request $req): JsonResponse
+     {
+@@ -247,68 +287,78 @@ public function rekomendasi(Request $req): JsonResponse
+         if (!$a || !$b) {
+             return response()->json(['message' => 'Format: asal=lat,lon&tujuan=lat,lon'], 422);
+         }
+-        $rad = min(max((float) $req->query('radius', 400), 100), 1500);   // jarak jalan kaki maks ke jalur (m)
+-        $params = [$a[1], $a[0], $b[1], $b[0], $rad];
+-        $line = self::LINE;
++        $rad = min(max((float) $req->query('radius', 800), 100), 1500);   // jarak jalan kaki maks ke jalur (m)
++        $this->siapkanGarisRute();
+ 
++        // perkiraan waktu (menit): jalan kaki 75 m/mnt (4,5 km/jam), angkot 250 m/mnt (15 km/jam), tunggu 5 mnt/angkot
++        $JALAN = 75.0;
++        $ANGKOT = 250.0;
++        $TUNGGU = 5.0;
++        $params = [$a[1], $a[0], $b[1], $b[0], $rad];
+         $base = "
+-            p AS (SELECT ST_SetSRID(ST_MakePoint(?, ?), 4326) AS a,
+-                         ST_SetSRID(ST_MakePoint(?, ?), 4326) AS b, ?::float8 AS rad),
+-            r AS (SELECT ru.rute_id, ru.kode_trayek, ru.arah, ru.nama_trayek, $line AS line
+-                  FROM naik.rute ru JOIN naik.rute_geometri g ON g.rute_id = ru.rute_id),
+-            ra AS (SELECT r.*, ST_LineLocatePoint(r.line, p.a) AS pa,
+-                          ST_Distance(r.line::geography, p.a::geography) AS da
+-                   FROM r, p WHERE ST_DWithin(r.line::geography, p.a::geography, p.rad)),
+-            rb AS (SELECT r.*, ST_LineLocatePoint(r.line, p.b) AS pb,
+-                          ST_Distance(r.line::geography, p.b::geography) AS db
+-                   FROM r, p WHERE ST_DWithin(r.line::geography, p.b::geography, p.rad))";
++            p AS (SELECT ST_Transform(ST_SetSRID(ST_MakePoint(?, ?), 4326), 32748) AS a,
++                         ST_Transform(ST_SetSRID(ST_MakePoint(?, ?), 4326), 32748) AS b, ?::float8 AS rad),
++            ra AS (SELECT r.rute_id, r.kode_trayek, r.arah, r.nama_trayek, r.g, r.len,
++                          ST_LineLocatePoint(r.g, p.a) AS pa, ST_Distance(r.g, p.a) AS da
++                   FROM naik.mv_rute_garis r, p WHERE ST_DWithin(r.g, p.a, p.rad)),
++            rb AS (SELECT r.rute_id, r.kode_trayek, r.arah, r.g, r.len,
++                          ST_LineLocatePoint(r.g, p.b) AS pb, ST_Distance(r.g, p.b) AS db
++                   FROM naik.mv_rute_garis r, p WHERE ST_DWithin(r.g, p.b, p.rad))";
+ 
+-        // ---- 1 angkot ----
++        // ---- 1 angkot: satu pilihan terbaik per trayek ----
+         $langsung = DB::select("
+-            WITH $base
+-            SELECT ra.rute_id, ra.kode_trayek, ra.arah, ra.nama_trayek,
+-                   ROUND(ra.da) AS jalan_ke_naik_m, ROUND(rb.db) AS jalan_dari_turun_m,
+-                   ROUND(ST_Length(ST_LineSubstring(ra.line, ra.pa, rb.pb)::geography)) AS jarak_angkot_m,
+-                   ST_AsGeoJSON(ST_LineSubstring(ra.line, ra.pa, rb.pb), 6) AS segmen,
++            WITH $base,
++            c AS (
++              SELECT ra.rute_id, ra.kode_trayek, ra.arah, ra.nama_trayek, ra.g, ra.pa, rb.pb, ra.da, rb.db,
++                     (rb.pb - ra.pa) * ra.len AS len,
++                     (ra.da + rb.db) / $JALAN + (rb.pb - ra.pa) * ra.len / $ANGKOT + $TUNGGU AS menit
++              FROM ra JOIN rb ON rb.rute_id = ra.rute_id AND ra.pa < rb.pb
++            ), best AS (
++              SELECT DISTINCT ON (kode_trayek) * FROM c ORDER BY kode_trayek, menit
++            )
++            SELECT best.rute_id, best.kode_trayek, best.arah, best.nama_trayek,
++                   ROUND(da) AS jalan_ke_naik_m, ROUND(db) AS jalan_dari_turun_m, ROUND(len) AS jarak_angkot_m,
++                   ROUND(menit) AS menit,
++                   ST_AsGeoJSON(ST_Transform(ST_LineSubstring(g, pa, pb), 4326), 6) AS segmen,
+                    t.tarif
+-            FROM ra JOIN rb ON rb.rute_id = ra.rute_id AND ra.pa < rb.pb
+-            LEFT JOIN naik.tarif_rute t ON t.kode_trayek = ra.kode_trayek
+-            ORDER BY ra.da + rb.db + 0.2 * ST_Length(ST_LineSubstring(ra.line, ra.pa, rb.pb)::geography)
++            FROM best LEFT JOIN naik.tarif_rute t ON t.kode_trayek = best.kode_trayek
++            ORDER BY best.menit
+             LIMIT 5", $params);
+ 
+-        // ---- 2 angkot (1x transfer di titik_transfer) ----
++        // ---- 2 angkot: pindah di titik_transfer (posisinya di tiap rute sudah dihitung di mv_transfer_rute) ----
+         $transfer = DB::select("
+             WITH $base,
+-            c AS (
+-              SELECT ra.rute_id AS ra_id, ra.kode_trayek AS ka, ra.arah AS arah_a, ra.line AS la, ra.pa, ra.da,
+-                     rb.rute_id AS rb_id, rb.kode_trayek AS kb, rb.arah AS arah_b, rb.line AS lb, rb.pb, rb.db,
+-                     tt.transfer_id, tt.geom AS tg,
+-                     ST_LineLocatePoint(ra.line, tt.geom) AS ta, ST_LineLocatePoint(rb.line, tt.geom) AS tb
+-              FROM ra JOIN rb ON rb.kode_trayek <> ra.kode_trayek
+-              JOIN naik.titik_transfer tt
+-                ON (tt.trayek_a = ra.kode_trayek AND tt.trayek_b = rb.kode_trayek)
+-                OR (tt.trayek_a = rb.kode_trayek AND tt.trayek_b = ra.kode_trayek)
+-              WHERE NOT EXISTS (SELECT 1 FROM rb x WHERE x.rute_id = ra.rute_id)   -- kalau 1 angkot cukup, skip
++            ta AS (   -- titik pindah yang dilewati SETELAH naik di rute pertama
++              SELECT ra.*, x.transfer_id, x.f AS fa, x.d AS dxa
++              FROM ra JOIN naik.mv_transfer_rute x ON x.rute_id = ra.rute_id AND x.f > ra.pa
++              WHERE NOT EXISTS (SELECT 1 FROM rb WHERE rb.rute_id = ra.rute_id AND rb.pb > ra.pa)  -- 1 angkot cukup
++            ), tb AS ( -- titik pindah yang dilewati SEBELUM turun di rute kedua
++              SELECT rb.*, y.transfer_id, y.f AS fb, y.d AS dyb
++              FROM rb JOIN naik.mv_transfer_rute y ON y.rute_id = rb.rute_id AND y.f < rb.pb
++            ), c AS (
++              SELECT ta.kode_trayek AS ka, ta.arah AS arah_1, ta.g AS ga, ta.pa, ta.fa, ta.da,
++                     tb.kode_trayek AS kb, tb.arah AS arah_2, tb.g AS gb, tb.fb, tb.pb, tb.db,
++                     ta.transfer_id, ta.dxa + tb.dyb AS dt,
++                     (ta.fa - ta.pa) * ta.len AS len_a, (tb.pb - tb.fb) * tb.len AS len_b
++              FROM ta JOIN tb ON tb.transfer_id = ta.transfer_id AND tb.kode_trayek <> ta.kode_trayek
+             ), s AS (
+-              SELECT c.*, ST_Length(ST_LineSubstring(la, pa, ta)::geography) AS len_a,
+-                          ST_Length(ST_LineSubstring(lb, tb, pb)::geography) AS len_b
+-              FROM c WHERE pa < ta AND tb < pb
+-            ), s2 AS (
+-              SELECT * FROM s WHERE len_a >= 300 AND len_b >= 300   -- naik angkot < 300 m mending jalan kaki
++              SELECT *, (da + db + dt) / $JALAN + (len_a + len_b) / $ANGKOT + 2 * $TUNGGU AS menit
++              FROM c WHERE len_a >= 300 AND len_b >= 300   -- naik angkot < 300 m mending jalan kaki
+             ), best AS (
+-              SELECT DISTINCT ON (ka, kb) * FROM s2 ORDER BY ka, kb, da + db + 0.2 * (len_a + len_b)
++              SELECT DISTINCT ON (ka, kb) * FROM s ORDER BY ka, kb, menit
+             )
+-            SELECT ka AS kode_1, arah_a AS arah_1, kb AS kode_2, arah_b AS arah_2,
+-                   ROUND(da) AS jalan_ke_naik_m, ROUND(db) AS jalan_dari_turun_m,
+-                   ROUND(len_a) AS jarak_angkot_1_m, ROUND(len_b) AS jarak_angkot_2_m,
+-                   ST_AsGeoJSON(tg, 6) AS titik_transfer,
+-                   ST_AsGeoJSON(ST_LineSubstring(la, pa, ta), 6) AS segmen_1,
+-                   ST_AsGeoJSON(ST_LineSubstring(lb, tb, pb), 6) AS segmen_2,
++            SELECT ka AS kode_1, arah_1, kb AS kode_2, arah_2,
++                   ROUND(da) AS jalan_ke_naik_m, ROUND(db) AS jalan_dari_turun_m, ROUND(dt) AS jalan_pindah_m,
++                   ROUND(len_a) AS jarak_angkot_1_m, ROUND(len_b) AS jarak_angkot_2_m, ROUND(menit) AS menit,
++                   ST_AsGeoJSON(tt.geom, 6) AS titik_transfer,
++                   ST_AsGeoJSON(ST_Transform(ST_LineSubstring(ga, pa, fa), 4326), 6) AS segmen_1,
++                   ST_AsGeoJSON(ST_Transform(ST_LineSubstring(gb, fb, pb), 4326), 6) AS segmen_2,
+                    COALESCE(t1.tarif, 0) + COALESCE(t2.tarif, 0) AS tarif
+             FROM best
++            JOIN naik.titik_transfer tt ON tt.transfer_id = best.transfer_id
+             LEFT JOIN naik.tarif_rute t1 ON t1.kode_trayek = ka
+             LEFT JOIN naik.tarif_rute t2 ON t2.kode_trayek = kb
+-            ORDER BY da + db + 0.2 * (len_a + len_b) + 300   -- penalti 300 m per transfer
++            ORDER BY menit
+             LIMIT 5", $params);
+ 
+         foreach (array_merge($langsung, $transfer) as $o) {
+@@ -318,20 +368,32 @@ public function rekomendasi(Request $req): JsonResponse
+                 }
+             }
+             $o->tarif = $o->tarif !== null ? (int) $o->tarif : null;
+-            foreach (['jalan_ke_naik_m', 'jalan_dari_turun_m', 'jarak_angkot_m', 'jarak_angkot_1_m', 'jarak_angkot_2_m'] as $f) {
++            foreach (['jalan_ke_naik_m', 'jalan_dari_turun_m', 'jalan_pindah_m', 'jarak_angkot_m',
++                      'jarak_angkot_1_m', 'jarak_angkot_2_m', 'menit'] as $f) {
+                 if (isset($o->$f)) {
+                     $o->$f = (int) $o->$f;
+                 }
+             }
+         }
+ 
++        // kalau sudah ada angkot langsung, opsi pindah hanya ditampilkan bila waktunya bersaing (selisih <= 5 menit)
++        if ($langsung) {
++            $tercepat = min(array_map(fn ($o) => $o->menit, $langsung));
++            $transfer = array_values(array_filter($transfer, fn ($o) => $o->menit <= $tercepat + 5));
++        }
++
++        $lurus = DB::selectOne("SELECT ROUND(ST_Distance(ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
++                                                         ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)) AS m",
++            [$a[1], $a[0], $b[1], $b[0]]);
++
+         return response()->json([
+             'asal' => ['lat' => $a[0], 'lon' => $a[1]],
+             'tujuan' => ['lat' => $b[0], 'lon' => $b[1]],
+             'radius_jalan_kaki_m' => $rad,
++            'jarak_lurus_m' => (int) $lurus->m,
+             'langsung' => $langsung,
+             'transfer' => $transfer,
+-            'catatan' => 'Tarif asumsi flat per angkot; jarak jalan kaki = jarak garis lurus ke jalur.',
++            'catatan' => 'Urut dari perkiraan waktu: jalan kaki 4,5 km/jam, angkot 15 km/jam, tunggu 5 menit per angkot. Tarif flat per angkot.',
+         ]);
+     }
+ }
+\ No newline at end of file
+diff --git a/frontend/src/dashboard/cari/CariPanel.jsx b/frontend/src/dashboard/cari/CariPanel.jsx
+index 457275b..d003c0f 100644
+--- a/frontend/src/dashboard/cari/CariPanel.jsx
++++ b/frontend/src/dashboard/cari/CariPanel.jsx
+@@ -5,12 +5,15 @@ import L from 'leaflet'
+ import { api } from '../../api/naik'
+ import KolomTempat from '../components/KolomTempat'
+ import PinPeta from './PinPeta'
+-import { tempatSaya, useTempatSaya } from '../hooks'
++import { tempatSaya, useLayarBesar, useTempatSaya } from '../hooks'
+ import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
+ import { useDashboard } from '../context'
+-import { Card, CardHeader, Floating, KodeBadge as Badge, PrimaryButton } from '../ui'
+-import { IconCap, IconHome, IconMap, IconSearch } from '../icons'
++import { Card, CardHeader, Floating, KodeBadge as Badge } from '../ui'
++import {
++  IconArrowLeft, IconBus, IconCap, IconChevronRight, IconHome, IconList, IconMap, IconPlay, IconSearch, IconSwap, IconTransfer, IconWalk,
++} from '../icons'
+ import NavigasiSimulasi from './NavigasiSimulasi'
++import { aturToleransiKlik } from '../simulasi'
+ 
+ const KodeBadge = (p) => <Badge size="sm" {...p} />
+ 
+@@ -24,10 +27,20 @@ function PanelSection({ title, children }) {
+ }
+ 
+ function KlikPeta({ onClick }) {
+-  useMapEvents({ click: (e) => onClick(e.latlng) })
++  const map = useMapEvents({ click: (e) => onClick(e.latlng) })
++  useEffect(() => aturToleransiKlik(map, 10), [map])
+   return null
+ }
+ 
++// opsi tercepat dari semua hasil (langsung maupun pindah)
++function opsiTercepat(data) {
++  const semua = [
++    ...data.langsung.map((o, i) => ({ jenis: 'langsung', i, menit: o.menit ?? 0 })),
++    ...data.transfer.map((o, i) => ({ jenis: 'transfer', i, menit: o.menit ?? 0 })),
++  ]
++  return semua.sort((a, b) => a.menit - b.menit)[0] ?? null
++}
++
+ function FitToPoints({ points, detailBuka, navigasiAktif }) {
+   const map = useMap()
+   const key = JSON.stringify(points) + (detailBuka ? '1' : '0')
+@@ -55,7 +68,6 @@ export default function CariPanel() {
+   const [asal, setAsal] = useState(null)
+   const [tujuan, setTujuan] = useState(null)
+   const [mode, setMode] = useState('asal') // titik mana yang diisi saat peta diklik
+-  const [radius, setRadius] = useState(400)
+   const [hasil, setHasil] = useState({ data: null, loading: false, error: null })
+   const [pilih, setPilih] = useState(null) // {jenis:'langsung'|'transfer', i}
+   const [detailBuka, setDetailBuka] = useState(true)
+@@ -64,6 +76,8 @@ export default function CariPanel() {
+   const [pin, setPin] = useState(null) // 'asal' | 'tujuan' saat memilih lewat pin geser
+   const [navigasiAktif, setNavigasiAktif] = useState(false)
+   const [activeStepNav, setActiveStepNav] = useState(0)
++  const besar = useLayarBesar()
++  const hasilRef = useRef(null)
+ 
+   // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, coba lokasi saya sebagai asal, lalu cari otomatis
+   const [params] = useSearchParams()
+@@ -82,13 +96,15 @@ export default function CariPanel() {
+     if (!asal) lokasiSaya({ diam: true })
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [params])
++  // sekali pilih langsung dicari: begitu asal & tujuan terisi, tanpa perlu tekan tombol
++  const permintaan = useRef(0)
+   useEffect(() => {
+-    if (otomatis.current && asal && tujuan) {
+-      otomatis.current = false
+-      cari()
+-    }
++    otomatis.current = false
++    if (!asal || !tujuan) return
++    const t = setTimeout(cari, 120)
++    return () => clearTimeout(t)
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [asal, tujuan])
++  }, [asal?.lat, asal?.lng, tujuan?.lat, tujuan?.lng])
+ 
+   function setTitik(jenis, titik) {
+     if (jenis === 'asal') setAsal(titik)
+@@ -140,22 +156,20 @@ export default function CariPanel() {
+ 
+   async function cari() {
+     if (!asal || !tujuan) return
+-    setHasil({ data: null, loading: true, error: null })
+-    setPilih(null)
+-    setDetailBuka(false)
++    const id = ++permintaan.current
++    setHasil((h) => ({ data: h.data, loading: true, error: null }))
+     setNavigasiAktif(false)
+     try {
+-      const data = await api.rekomendasi(asal, tujuan, radius)
++      const data = await api.rekomendasi(asal, tujuan)
++      if (id !== permintaan.current) return // sudah ada pencarian yang lebih baru
+       setHasil({ data, loading: false, error: null })
+-      if (data.langsung.length) {
+-        setPilih({ jenis: 'langsung', i: 0 })
+-        setDetailBuka(true)
+-      } else if (data.transfer.length) {
+-        setPilih({ jenis: 'transfer', i: 0 })
+-        setDetailBuka(true)
+-      }
++      const best = opsiTercepat(data)
++      setPilih(best ? { jenis: best.jenis, i: best.i } : null)
++      // layar lebar: langsung tampilkan langkah opsi tercepat. HP: tetap di daftar hasil (panel langkah menutupi peta)
++      setDetailBuka(Boolean(best) && window.innerWidth >= 1024)
++      if (window.innerWidth < 1024) setTimeout(() => hasilRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+     } catch (error) {
+-      setHasil({ data: null, loading: false, error })
++      if (id === permintaan.current) setHasil({ data: null, loading: false, error })
+     }
+   }
+ 
+@@ -174,6 +188,7 @@ export default function CariPanel() {
+     setPilih(p)
+     setDetailBuka(true)
+     setNavigasiAktif(false)
++    if (!besar) setPanelCariBuka(false) // HP: daftar diciutkan supaya peta & langkah kelihatan
+   }
+ 
+   const panel = (
+@@ -203,7 +218,9 @@ export default function CariPanel() {
+             className="rounded-full border border-border-nav px-3 py-1 text-xs font-semibold text-dark/70 hover:bg-mist disabled:opacity-40"
+             aria-label="Tukar asal dan tujuan"
+           >
+-            ⇅ Tukar
++            <span className="inline-flex items-center gap-1">
++              <IconSwap className="h-3.5 w-3.5" /> Tukar
++            </span>
+           </button>
+         </div>
+         <TitikInput
+@@ -218,22 +235,12 @@ export default function CariPanel() {
+         />
+         {lokasiErr && <p className="mt-2 text-xs text-red-700">{lokasiErr}</p>}
+ 
+-        <label className="mt-3.5 flex items-center justify-between gap-3 text-xs sm:text-sm">
+-          <span className="text-dark/70 font-medium">Maks. jalan kaki ke jalur</span>
+-          <select
+-            value={radius}
+-            onChange={(e) => setRadius(Number(e.target.value))}
+-            className="rounded-lg border border-border-nav px-2.5 py-1.5 text-xs sm:text-sm"
+-          >
+-            {[200, 400, 600, 800, 1000].map((r) => (
+-              <option key={r} value={r}>{r} m</option>
+-            ))}
+-          </select>
+-        </label>
+-
+-        <PrimaryButton onClick={cari} disabled={!asal || !tujuan || hasil.loading} className="mt-3.5 py-2.5 sm:py-3 text-sm">
+-          {hasil.loading ? 'Mencari…' : 'Cari rute'}
+-        </PrimaryButton>
++        {hasil.loading && (
++          <p className="mt-3 flex items-center justify-center gap-2 text-[12.5px] font-semibold text-primary" role="status">
++            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/25 border-t-primary" />
++            Mencari angkot…
++          </p>
++        )}
+         {(!asal || !tujuan) && (
+           <p className="mt-2 text-center text-[11px] sm:text-xs text-dark/50 leading-relaxed">
+             Ketik nama tempat, pilih lewat peta, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
+@@ -245,14 +252,13 @@ export default function CariPanel() {
+         )}
+ 
+         {hasil.data && (
+-          <div className="mt-4 border-t border-[#EDF1F2] pt-3">
++          <div ref={hasilRef} className={`mt-4 scroll-mt-2 border-t border-[#EDF1F2] pt-3 transition-opacity ${hasil.loading ? 'opacity-50' : ''}`}>
+             <Hasil
+               data={hasil.data}
+               warna={warna}
+               pilih={pilih}
+               onPilihOpsi={pilihOpsi}
+               onMulaiNavigasi={() => setNavigasiAktif(true)}
+-              radius={radius}
+             />
+           </div>
+         )}
+@@ -300,7 +306,7 @@ export default function CariPanel() {
+             onClick={() => setPanelCariBuka(true)}
+             className="flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-xs font-bold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.18)] ring-1 ring-black/5 hover:bg-mist active:scale-95"
+           >
+-            <span className="text-primary font-bold">🔍</span>
++            <IconSearch className="h-4 w-4 text-primary" />
+             <span>Cari Rute</span>
+             {asal && tujuan && (
+               <span className="text-dark/50 font-medium truncate max-w-[140px]">
+@@ -315,13 +321,13 @@ export default function CariPanel() {
+             onClick={() => setNavigasiAktif(false)}
+             className="flex items-center gap-2 rounded-2xl bg-white px-3.5 py-2 text-xs font-bold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.18)] ring-1 ring-black/5 hover:bg-mist active:scale-95"
+           >
+-            <span>◀</span>
+-            <span>Ubah Rute / Cari</span>
++            <IconArrowLeft className="h-4 w-4" />
++            <span>Ubah rute</span>
+           </button>
+         </Floating>
+       )}
+ 
+-      {/* Mode Navigasi Realtime (Simulasi Google Maps) */}
++      {/* Simulasi perjalanan (animasi, bukan pelacakan posisi asli) */}
+       {navigasiAktif && opsi && (
+         <NavigasiSimulasi
+           opsi={opsi}
+@@ -372,12 +378,12 @@ export default function CariPanel() {
+             onClick={() => setDetailBuka(true)}
+             className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-4 text-[13px] font-semibold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.16)] transition hover:bg-[#F6F9F9] active:scale-[0.98]"
+           >
+-            <span className="text-primary font-bold">📋</span> Buka Langkah Perjalanan
++            <IconList className="h-4 w-4 text-primary" /> Langkah perjalanan
+           </button>
+         </Floating>
+       )}
+ 
+-      {!navigasiAktif && (
++      {!navigasiAktif && (besar || !(opsi && detailBuka)) && !(!besar && panelCariBuka && hasil.data) && (
+         <Floating className="bottom-24 left-1/2 -translate-x-1/2 lg:bottom-4">
+           <p className="rounded-full bg-white px-4 py-2 text-[13px] font-semibold whitespace-nowrap shadow-[0_8px_30px_rgba(21,30,44,0.14)]">
+             Klik peta untuk mengisi{' '}
+@@ -444,97 +450,99 @@ function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, onLokasiSaya
+   )
+ }
+ 
+-function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi, radius }) {
++const menitOpsi = (o) =>
++  o.menit ??
++  ('kode_1' in o
++    ? menitJalan(o.jalan_ke_naik_m + o.jalan_dari_turun_m) + menitAngkot(o.jarak_angkot_1_m + o.jarak_angkot_2_m) + 10
++    : menitJalan(o.jalan_ke_naik_m + o.jalan_dari_turun_m) + menitAngkot(o.jarak_angkot_m) + 5)
++
++function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
+   const kosong = !data.langsung.length && !data.transfer.length
++  const dekat = data.jarak_lurus_m != null && data.jarak_lurus_m <= 1200
++  const tercepat = opsiTercepat(data)
+   return (
+     <>
++      {dekat && (
++        <div className="mx-5 mb-1 flex items-center gap-3 rounded-xl bg-[#EEF3FE] px-3 py-2.5 text-[12.5px] text-[#1E3A8A]">
++          <IconWalk className="h-5 w-5 shrink-0" />
++          <span>
++            Dekat — jalan kaki saja sekitar <strong>{menitJalan(data.jarak_lurus_m * 1.25)} menit</strong> ({jarak(data.jarak_lurus_m * 1.25)}).
++          </span>
++        </div>
++      )}
+       {kosong && (
+         <PanelSection>
+           <p className="text-sm font-semibold">Belum ada angkot yang cocok.</p>
+           <p className="mt-1 text-sm text-dark/70">
+-            Tidak ada jalur dalam radius {radius} m dari titik asal/tujuan, atau perlu pindah lebih dari sekali. Coba perbesar jarak jalan
+-            kaki atau geser titiknya mendekati jalan besar.
++            Tidak ada jalur angkot dalam ±{data.radius_jalan_kaki_m ?? 800} m dari titik asal/tujuan, atau perlu pindah lebih dari sekali.
++            Coba geser titiknya ke jalan besar terdekat.
+           </p>
+         </PanelSection>
+       )}
+-      {data.langsung.length > 0 && (
+-        <PanelSection title="Langsung · 1 angkot">
+-          <div className="space-y-2">
+-            {data.langsung.map((o, i) => {
+-              const aktif = pilih?.jenis === 'langsung' && pilih.i === i
+-              return (
+-                <KartuOpsi
+-                  key={o.rute_id}
+-                  aktif={aktif}
+-                  onClick={() => onPilihOpsi({ jenis: 'langsung', i })}
+-                >
+-                  <div className="flex items-center gap-2">
+-                    <KodeBadge kode={o.kode_trayek} warna={warna[o.kode_trayek]} size="sm" />
+-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{o.arah}</span>
+-                    <span className="font-display font-bold text-primary">{rupiah(o.tarif)}</span>
+-                  </div>
+-                  <Ringkas jalan={o.jalan_ke_naik_m + o.jalan_dari_turun_m} angkot={o.jarak_angkot_m} />
+-                  {aktif && (
+-                    <div className="mt-2.5 flex items-center justify-between border-t border-primary/10 pt-2 text-[11px] font-semibold text-primary">
+-                      <button
+-                        onClick={(e) => {
+-                          e.stopPropagation()
+-                          onMulaiNavigasi?.()
+-                        }}
+-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
+-                      >
+-                        <span>▶ Mulai</span>
+-                      </button>
+-                      <span className="hidden sm:inline">Lihat rincian →</span>
++      {[
++        ['langsung', 'Langsung · 1 angkot'],
++        ['transfer', 'Pindah 1x · 2 angkot'],
++      ].map(([jenis, judul]) =>
++        data[jenis].length ? (
++          <PanelSection key={jenis} title={judul}>
++            <div className="space-y-2">
++              {data[jenis].map((o, i) => {
++                const aktif = pilih?.jenis === jenis && pilih.i === i
++                const transfer = jenis === 'transfer'
++                const kode = transfer ? [o.kode_1, o.kode_2] : [o.kode_trayek]
++                const jalan = o.jalan_ke_naik_m + o.jalan_dari_turun_m + (o.jalan_pindah_m ?? 0)
++                const angkot = transfer ? o.jarak_angkot_1_m + o.jarak_angkot_2_m : o.jarak_angkot_m
++                return (
++                  <KartuOpsi key={kode.join('-')} aktif={aktif} onClick={() => onPilihOpsi({ jenis, i })}>
++                    <div className="flex items-center gap-1.5">
++                      {kode.map((k, j) => (
++                        <span key={k} className="flex items-center gap-1.5">
++                          {j > 0 && <IconTransfer className="h-3.5 w-3.5 text-dark/35" />}
++                          <KodeBadge kode={k} warna={warna[k]} />
++                        </span>
++                      ))}
++                      <span className="ml-1 min-w-0 flex-1 truncate text-[13px] font-semibold text-dark">
++                        {transfer ? `ke ${o.arah_2}` : o.arah}
++                      </span>
++                      <span className="font-display text-[15px] font-bold text-dark">{menitOpsi(o)} mnt</span>
+                     </div>
+-                  )}
+-                </KartuOpsi>
+-              )
+-            })}
+-          </div>
+-        </PanelSection>
+-      )}
+-      {data.transfer.length > 0 && (
+-        <PanelSection title="1x pindah · 2 angkot">
+-          <div className="space-y-2">
+-            {data.transfer.map((o, i) => {
+-              const aktif = pilih?.jenis === 'transfer' && pilih.i === i
+-              return (
+-                <KartuOpsi
+-                  key={`${o.kode_1}-${o.kode_2}`}
+-                  aktif={aktif}
+-                  onClick={() => onPilihOpsi({ jenis: 'transfer', i })}
+-                >
+-                  <div className="flex items-center gap-2">
+-                    <KodeBadge kode={o.kode_1} warna={warna[o.kode_1]} size="sm" />
+-                    <span className="text-dark/40">→</span>
+-                    <KodeBadge kode={o.kode_2} warna={warna[o.kode_2]} size="sm" />
+-                    <span className="min-w-0 flex-1 truncate text-xs text-dark/60">pindah 1x</span>
+-                    <span className="font-display font-bold text-primary">{rupiah(o.tarif)}</span>
+-                  </div>
+-                  <Ringkas jalan={o.jalan_ke_naik_m + o.jalan_dari_turun_m} angkot={o.jarak_angkot_1_m + o.jarak_angkot_2_m} />
+-                  {aktif && (
+-                    <div className="mt-2.5 flex items-center justify-between border-t border-primary/10 pt-2 text-[11px] font-semibold text-primary">
+-                      <button
++                    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-dark/55">
++                      <span className="inline-flex items-center gap-1">
++                        <IconWalk className="h-3.5 w-3.5" />
++                        {jarak(jalan)}
++                      </span>
++                      <span className="inline-flex items-center gap-1">
++                        <IconBus className="h-3.5 w-3.5" />
++                        {jarak(angkot)}
++                      </span>
++                      <span>{rupiah(o.tarif)}</span>
++                      {tercepat?.jenis === jenis && tercepat.i === i && (
++                        <span className="rounded-full bg-primary/10 px-1.5 py-px text-[10.5px] font-bold text-primary">tercepat</span>
++                      )}
++                    </p>
++                    {aktif && (
++                      <span
++                        role="button"
++                        tabIndex={0}
+                         onClick={(e) => {
+                           e.stopPropagation()
+                           onMulaiNavigasi?.()
+                         }}
+-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 active:scale-95"
++                        onKeyDown={(e) => e.key === 'Enter' && onMulaiNavigasi?.()}
++                        className="mt-2.5 inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[12px] font-semibold text-white hover:bg-[#178563]"
+                       >
+-                        <span>▶ Mulai</span>
+-                      </button>
+-                      <span className="hidden sm:inline">Lihat rincian →</span>
+-                    </div>
+-                  )}
+-                </KartuOpsi>
+-              )
+-            })}
+-          </div>
+-        </PanelSection>
++                        <IconPlay className="h-3.5 w-3.5" /> Mulai simulasi
++                      </span>
++                    )}
++                  </KartuOpsi>
++                )
++              })}
++            </div>
++          </PanelSection>
++        ) : null,
+       )}
+-      <p className="px-5 py-4 text-xs leading-relaxed text-dark/50">
+-        Tarif rata-rata Rp5.000 / angkot. Klik salah satu opsi untuk melihat jalur di peta dan rincian langkah perjalanan di panel kanan.
++      <p className="px-5 py-3 text-[11.5px] leading-relaxed text-dark/45">
++        Urut dari perkiraan waktu (jalan kaki, naik angkot, dan ±5 menit menunggu tiap angkot). Tarif Rp5.000 per angkot.
+       </p>
+     </>
+   )
+@@ -542,289 +550,140 @@ function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi, radius }) {
+ 
+ function KartuOpsi({ aktif, onClick, children }) {
+   return (
+-    <button
++    <div
++      role="button"
++      tabIndex={0}
+       onClick={onClick}
+-      className={`w-full rounded-xl border p-3 text-left transition ${aktif ? 'border-primary bg-primary/5 ring-2 ring-primary/15' : 'border-border-nav hover:bg-[#F4FAF8]'}`}
++      onKeyDown={(e) => e.key === 'Enter' && onClick()}
++      className={`w-full cursor-pointer rounded-xl border p-3 text-left transition ${aktif ? 'border-primary bg-primary/5 ring-2 ring-primary/15' : 'border-border-nav hover:bg-[#F4FAF8]'}`}
+     >
+       {children}
+-    </button>
++    </div>
+   )
+ }
+ 
+-function Ringkas({ jalan, angkot }) {
++function Tahap({ ikon: Ikon, warna = '#E7EEFD', warnaIkon = '#2563EB', sorot, label, children }) {
+   return (
+-    <p className="mt-2 text-xs text-dark/60">
+-      ± {menitJalan(jalan) + menitAngkot(angkot)} menit · jalan kaki {jarak(jalan)} · naik angkot {jarak(angkot)}
+-    </p>
++    <li className={`relative flex items-start gap-3 rounded-xl p-1.5 transition ${sorot ? 'bg-primary/8 ring-1 ring-primary/25' : ''}`}>
++      <span className="z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-white shadow-sm" style={{ backgroundColor: warna, color: warnaIkon }}>
++        {typeof Ikon === 'string' ? <span className="text-[12px] font-bold">{Ikon}</span> : <Ikon className="h-4 w-4" />}
++      </span>
++      <div className="min-w-0 pt-0.5">
++        {sorot && <span className="mb-0.5 inline-block rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-white">{label}</span>}
++        {children}
++      </div>
++    </li>
+   )
+ }
+ 
+-function DetailLangkah({
+-  opsi,
+-  warna,
+-  asal,
+-  tujuan,
+-  onClose,
+-  navigasiAktif,
+-  onMulaiNavigasi,
+-  onStopNavigasi,
+-  activeStepIdx = 0,
+-}) {
++function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMulaiNavigasi, onStopNavigasi, activeStepIdx = 0 }) {
+   const transfer = 'kode_1' in opsi
+-  const totalJalan = opsi.jalan_ke_naik_m + opsi.jalan_dari_turun_m
++  const totalJalan = opsi.jalan_ke_naik_m + opsi.jalan_dari_turun_m + (opsi.jalan_pindah_m ?? 0)
+   const totalAngkot = transfer ? opsi.jarak_angkot_1_m + opsi.jarak_angkot_2_m : opsi.jarak_angkot_m
+-  const totalWaktu = menitJalan(totalJalan) + menitAngkot(totalAngkot)
+-
+-  const isStep0 = navigasiAktif && activeStepIdx === 0
+-  const isStep1 = navigasiAktif && activeStepIdx === 1
+-  const isStep2 = navigasiAktif && transfer && activeStepIdx === 2
+-  const isStep3 = navigasiAktif && transfer && activeStepIdx === 3
+-  const isStepAkhir = navigasiAktif && (transfer ? activeStepIdx === 4 : activeStepIdx === 2)
++  const k1 = transfer ? opsi.kode_1 : opsi.kode_trayek
++  const sorot = (i) => navigasiAktif && activeStepIdx === i
++  const akhir = transfer ? 4 : 2
+ 
+   return (
+     <Card className="flex max-h-full min-h-0 flex-1 flex-col overflow-hidden">
+       <CardHeader
+         title="Langkah Perjalanan"
+         onClose={onClose}
+-        subtitle={
+-          transfer
+-            ? `Trayek ${nomor(opsi.kode_1)} transit ke ${nomor(opsi.kode_2)}`
+-            : `Trayek ${nomor(opsi.kode_trayek)} langsung`
+-        }
++        subtitle={transfer ? `Angkot ${nomor(opsi.kode_1)}, pindah ke ${nomor(opsi.kode_2)}` : `Angkot ${nomor(opsi.kode_trayek)} langsung`}
+       />
+-      <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-8 lg:px-6">
+-        {/* Ringkasan Perjalanan */}
+-        <div className="rounded-2xl border border-[#E3E8EA]/70 bg-[#F6F9F9] p-3.5">
+-          <div className="flex items-center justify-between border-b border-[#E3E8EA]/70 pb-2.5">
+-            <div className="flex items-center gap-2">
+-              {transfer ? (
+-                <>
+-                  <KodeBadge kode={opsi.kode_1} warna={warna[opsi.kode_1]} size="sm" />
+-                  <span className="font-bold text-dark/40">→</span>
+-                  <KodeBadge kode={opsi.kode_2} warna={warna[opsi.kode_2]} size="sm" />
+-                  <span className="text-xs font-medium text-dark/60">pindah 1x</span>
+-                </>
+-              ) : (
+-                <>
+-                  <KodeBadge kode={opsi.kode_trayek} warna={warna[opsi.kode_trayek]} size="sm" />
+-                  <span className="text-xs font-medium text-dark/60">langsung</span>
+-                </>
+-              )}
+-            </div>
+-            <span className="font-display text-base font-bold text-primary">
+-              {rupiah(opsi.tarif)}
+-            </span>
+-          </div>
+-
+-          <div className="grid grid-cols-3 gap-2 pt-2.5 text-center text-xs">
+-            <div>
+-              <p className="text-dark/50">Estimasi</p>
+-              <p className="mt-0.5 font-bold text-dark">± {totalWaktu} mnt</p>
+-            </div>
+-            <div>
+-              <p className="text-dark/50">Jalan Kaki</p>
+-              <p className="mt-0.5 font-bold text-dark">{jarak(totalJalan)}</p>
++      <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-6 lg:px-6">
++        <div className="grid grid-cols-4 gap-1 rounded-2xl bg-[#F6F9F9] p-3 text-center">
++          {[
++            ['Waktu', `±${menitOpsi(opsi)} mnt`],
++            ['Jalan', jarak(totalJalan)],
++            ['Angkot', jarak(totalAngkot)],
++            ['Tarif', rupiah(opsi.tarif)],
++          ].map(([l, v]) => (
++            <div key={l}>
++              <p className="text-[11px] text-dark/50">{l}</p>
++              <p className="mt-0.5 text-[13px] font-bold text-dark">{v}</p>
+             </div>
+-            <div>
+-              <p className="text-dark/50">Naik Angkot</p>
+-              <p className="mt-0.5 font-bold text-dark">{jarak(totalAngkot)}</p>
+-            </div>
+-          </div>
++          ))}
+         </div>
+ 
+-        {/* Tombol Mulai Navigasi Google Maps Style */}
+-        <div className="mt-3.5">
++        <div className="mt-3">
+           {!navigasiAktif ? (
+             <button
+               onClick={onMulaiNavigasi}
+-              className="flex w-full items-center justify-center gap-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3 px-4 text-sm font-bold text-white shadow-[0_6px_20px_rgba(5,150,105,0.32)] transition hover:from-emerald-700 hover:to-teal-700 active:scale-[0.98]"
++              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[14.5px] font-semibold text-white shadow-[0_6px_16px_rgba(26,147,111,0.25)] transition hover:bg-[#178563] active:scale-[0.98]"
+             >
+-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/25 text-xs text-white">
+-                ▶
+-              </span>
+-              <span>Mulai Navigasi Realtime</span>
++              <IconPlay className="h-4 w-4" /> Mulai simulasi perjalanan
+             </button>
+           ) : (
+-            <div className="flex items-center justify-between rounded-2xl border border-emerald-500/30 bg-emerald-50/80 p-3">
+-              <div className="flex items-center gap-2.5">
+-                <span className="relative flex h-3 w-3">
+-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+-                  <span className="relative inline-flex h-3 w-3 rounded-full bg-emerald-600"></span>
+-                </span>
+-                <span className="text-xs font-bold text-emerald-800">Navigasi Sedang Berjalan</span>
+-              </div>
+-              <button
+-                onClick={onStopNavigasi}
+-                className="rounded-xl border border-red-200 bg-white px-2.5 py-1 text-xs font-bold text-red-600 hover:bg-red-50"
+-              >
++            <div className="flex items-center justify-between rounded-2xl border border-primary/25 bg-primary/5 p-3">
++              <span className="text-[13px] font-semibold text-primary">Simulasi sedang berjalan</span>
++              <button onClick={onStopNavigasi} className="rounded-lg border border-[#E3E8EA] bg-white px-2.5 py-1 text-xs font-semibold text-dark/70 hover:bg-[#F4F7F7]">
+                 Hentikan
+               </button>
+             </div>
+           )}
+         </div>
+ 
+-        {/* Timeline Vertikal Langkah-Langkah */}
+-        <div className="mt-5">
+-          <h4 className="mb-3.5 text-[12px] font-bold tracking-wider text-dark/50 uppercase">
+-            Panduan Rute
+-          </h4>
+-
+-          <div className="relative space-y-4 before:absolute before:top-3 before:bottom-3 before:left-[15px] before:w-[2px] before:bg-[#E3E8EA]">
+-            {/* 1. Titik Asal */}
+-            <div className="relative flex items-start gap-3.5 pl-1">
+-              <span
+-                className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow-sm"
+-                style={{ backgroundColor: WARNA_ASAL }}
+-              >
+-                A
+-              </span>
+-              <div className="min-w-0 pt-0.5">
+-                <p className="text-xs font-semibold text-dark/50">Titik Awal</p>
+-                <p className="text-sm font-bold leading-snug text-dark">{asal?.nama || 'Lokasi asal'}</p>
+-              </div>
+-            </div>
+-
+-            {/* 2. Jalan kaki ke titik naik */}
+-            <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStep0 ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
+-              <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#EAF4EE] text-sm shadow-sm">
+-                🚶
+-              </span>
+-              <div className="min-w-0 pt-0.5">
+-                {isStep0 && (
+-                  <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+-                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
+-                    Posisi Anda Sekarang
+-                  </span>
+-                )}
+-                <p className="text-sm text-dark/80">
+-                  Jalan kaki <strong className="text-dark">{jarak(opsi.jalan_ke_naik_m)}</strong> (±{menitJalan(opsi.jalan_ke_naik_m)} mnt) ke jalur angkot
++        <h4 className="mt-5 mb-2 text-[11.5px] font-bold tracking-wider text-dark/45 uppercase">Panduan rute</h4>
++        <ol className="relative space-y-1.5 before:absolute before:top-4 before:bottom-4 before:left-[21.5px] before:w-0.5 before:bg-[#E3E8EA]">
++          <Tahap ikon="A" warna={WARNA_ASAL} warnaIkon="#fff">
++            <p className="text-[11.5px] text-dark/50">Berangkat dari</p>
++            <p className="text-[14px] leading-snug font-semibold text-dark">{asal?.nama || 'Lokasi asal'}</p>
++          </Tahap>
++          <Tahap ikon={IconWalk} sorot={sorot(0)} label="sekarang">
++            <p className="text-[13.5px] text-dark/80">
++              Jalan kaki <strong className="text-dark">{jarak(opsi.jalan_ke_naik_m)}</strong> (±{menitJalan(opsi.jalan_ke_naik_m)} mnt) ke jalur angkot
++            </p>
++          </Tahap>
++          <Tahap ikon={IconBus} warna={warna[k1] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(1)} label="di angkot">
++            <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-dark">
++              Naik angkot <KodeBadge kode={k1} warna={warna[k1]} />
++            </p>
++            <p className="mt-0.5 text-[12px] text-dark/60">
++              Arah {transfer ? opsi.arah_1 : opsi.arah} · {jarak(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} (±
++              {menitAngkot(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} mnt)
++            </p>
++          </Tahap>
++          {transfer && (
++            <>
++              <Tahap ikon={IconTransfer} warna="#EFE9FF" warnaIkon="#6D42C7" sorot={sorot(2)} label="pindah">
++                <p className="text-[13.5px] font-semibold text-[#5B34B0]">Pindah angkot</p>
++                <p className="mt-0.5 text-[12px] text-dark/60">
++                  Turun, jalan {opsi.jalan_pindah_m != null ? jarak(opsi.jalan_pindah_m) : 'sebentar'} ke jalur {nomor(opsi.kode_2)}
+                 </p>
+-              </div>
+-            </div>
+-
+-            {/* 3. Naik Angkot 1 */}
+-            <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStep1 ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
+-              <span
+-                className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm shadow-sm"
+-                style={{ backgroundColor: (warna[transfer ? opsi.kode_1 : opsi.kode_trayek] ?? '#1A936F') + '30' }}
+-              >
+-                🚐
+-              </span>
+-              <div className="min-w-0 pt-0.5">
+-                {isStep1 && (
+-                  <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+-                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
+-                    Di Dalam Angkot
+-                  </span>
+-                )}
+-                <div className="flex flex-wrap items-center gap-1.5">
+-                  <span className="text-sm font-bold text-dark">Naik Angkot</span>
+-                  <KodeBadge kode={transfer ? opsi.kode_1 : opsi.kode_trayek} warna={warna[transfer ? opsi.kode_1 : opsi.kode_trayek]} size="sm" />
+-                </div>
+-                <p className="mt-0.5 text-xs text-dark/65">
+-                  Arah {transfer ? opsi.arah_1 : opsi.arah} · ±{jarak(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} (±{menitAngkot(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} mnt)
++              </Tahap>
++              <Tahap ikon={IconBus} warna={warna[opsi.kode_2] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(3)} label="di angkot">
++                <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-dark">
++                  Naik angkot <KodeBadge kode={opsi.kode_2} warna={warna[opsi.kode_2]} />
+                 </p>
+-              </div>
+-            </div>
+-
+-            {/* Jika Transfer: Titik Pindah & Angkot 2 */}
+-            {transfer && (
+-              <>
+-                <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStep2 ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
+-                  <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#A586FF]/20 text-sm shadow-sm">
+-                    🔁
+-                  </span>
+-                  <div className="min-w-0 pt-0.5">
+-                    {isStep2 && (
+-                      <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+-                        <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
+-                        Transit di Sini
+-                      </span>
+-                    )}
+-                    <p className="text-sm font-bold text-[#6D42C7]">Titik Transit / Pindah</p>
+-                    <p className="mt-0.5 text-xs text-dark/65">
+-                      Turun di halte/titik pindah, lanjut ke angkot berikutnya
+-                    </p>
+-                  </div>
+-                </div>
+-
+-                <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStep3 ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
+-                  <span
+-                    className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm shadow-sm"
+-                    style={{ backgroundColor: (warna[opsi.kode_2] ?? '#1A936F') + '30' }}
+-                  >
+-                    🚐
+-                  </span>
+-                  <div className="min-w-0 pt-0.5">
+-                    {isStep3 && (
+-                      <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+-                        <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
+-                        Di Dalam Angkot
+-                      </span>
+-                    )}
+-                    <div className="flex flex-wrap items-center gap-1.5">
+-                      <span className="text-sm font-bold text-dark">Naik Angkot</span>
+-                      <KodeBadge kode={opsi.kode_2} warna={warna[opsi.kode_2]} size="sm" />
+-                    </div>
+-                    <p className="mt-0.5 text-xs text-dark/65">
+-                      Arah {opsi.arah_2} · ±{jarak(opsi.jarak_angkot_2_m)} (±{menitAngkot(opsi.jarak_angkot_2_m)} mnt)
+-                    </p>
+-                  </div>
+-                </div>
+-              </>
+-            )}
+-
+-            {/* Jalan kaki ke tujuan */}
+-            <div className={`relative flex items-start gap-3.5 pl-1 transition-all ${isStepAkhir ? 'rounded-xl bg-emerald-50/80 p-2 -ml-1 ring-1 ring-emerald-500/30' : ''}`}>
+-              <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#EAF4EE] text-sm shadow-sm">
+-                🚶
+-              </span>
+-              <div className="min-w-0 pt-0.5">
+-                {isStepAkhir && (
+-                  <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
+-                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
+-                    Menuju Tujuan
+-                  </span>
+-                )}
+-                <p className="text-sm text-dark/80">
+-                  Turun dari angkot, jalan kaki <strong className="text-dark">{jarak(opsi.jalan_dari_turun_m)}</strong> (±{menitJalan(opsi.jalan_dari_turun_m)} mnt)
++                <p className="mt-0.5 text-[12px] text-dark/60">
++                  Arah {opsi.arah_2} · {jarak(opsi.jarak_angkot_2_m)} (±{menitAngkot(opsi.jarak_angkot_2_m)} mnt)
+                 </p>
+-              </div>
+-            </div>
+-
+-            {/* Titik Tujuan */}
+-            <div className="relative flex items-start gap-3.5 pl-1">
+-              <span
+-                className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-xs font-bold text-white shadow-sm"
+-                style={{ backgroundColor: WARNA_TUJUAN }}
+-              >
+-                B
+-              </span>
+-              <div className="min-w-0 pt-0.5">
+-                <p className="text-xs font-semibold text-dark/50">Tiba di Tujuan</p>
+-                <p className="text-sm font-bold leading-snug text-dark">{tujuan?.nama || 'Lokasi tujuan'}</p>
+-              </div>
+-            </div>
+-          </div>
+-        </div>
+-
+-        {/* Tautan Jalur */}
+-        <div className="mt-5 border-t border-[#EDF1F2] pt-4">
+-          <p className="mb-2 text-xs font-semibold text-dark/60">Eksplorasi Jalur Angkot:</p>
+-          <div className="flex flex-wrap gap-2">
+-            {(transfer ? [opsi.kode_1, opsi.kode_2] : [opsi.kode_trayek]).map((k) => (
+-              <Link
+-                key={k}
+-                to={`/rute/${nomor(k)}`}
+-                className="inline-flex items-center gap-1.5 rounded-full border border-border-nav bg-white px-3 py-1.5 text-xs font-semibold text-dark/80 transition hover:bg-mist hover:text-primary"
+-              >
+-                <span>Lihat rute Trayek {nomor(k)}</span>
+-                <span className="font-bold text-primary">→</span>
+-              </Link>
+-            ))}
+-          </div>
++              </Tahap>
++            </>
++          )}
++          <Tahap ikon={IconWalk} sorot={sorot(akhir)} label="sekarang">
++            <p className="text-[13.5px] text-dark/80">
++              Turun, jalan kaki <strong className="text-dark">{jarak(opsi.jalan_dari_turun_m)}</strong> (±{menitJalan(opsi.jalan_dari_turun_m)} mnt)
++            </p>
++          </Tahap>
++          <Tahap ikon="B" warna={WARNA_TUJUAN} warnaIkon="#fff">
++            <p className="text-[11.5px] text-dark/50">Sampai di</p>
++            <p className="text-[14px] leading-snug font-semibold text-dark">{tujuan?.nama || 'Lokasi tujuan'}</p>
++          </Tahap>
++        </ol>
++
++        <div className="mt-5 flex flex-wrap gap-2 border-t border-[#EDF1F2] pt-4">
++          {(transfer ? [opsi.kode_1, opsi.kode_2] : [opsi.kode_trayek]).map((k) => (
++            <Link
++              key={k}
++              to={`/rute/${nomor(k)}`}
++              className="inline-flex items-center gap-1.5 rounded-full border border-border-nav bg-white px-3 py-1.5 text-xs font-semibold text-dark/75 transition hover:bg-mist hover:text-primary"
++            >
++              Lihat rute {nomor(k)} <IconChevronRight className="h-3.5 w-3.5" />
++            </Link>
++          ))}
+         </div>
+-        <div className="h-4 shrink-0" aria-hidden="true" />
+       </div>
+     </Card>
+   )
+diff --git a/frontend/src/dashboard/cari/NavigasiSimulasi.jsx b/frontend/src/dashboard/cari/NavigasiSimulasi.jsx
+index c6a93f1..bbe35f4 100644
+--- a/frontend/src/dashboard/cari/NavigasiSimulasi.jsx
++++ b/frontend/src/dashboard/cari/NavigasiSimulasi.jsx
+@@ -1,726 +1,428 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+ import { Marker, Polyline, useMap, useMapEvents } from 'react-leaflet'
+ import L from 'leaflet'
+-import { jarak, nomor } from '../../utils/format'
+-import { IconX } from '../icons'
++import { jarak, menitAngkot, menitJalan, nomor } from '../../utils/format'
++import {
++  IconBus, IconChevronDown, IconChevronUp, IconCrosshair, IconFlag, IconPause, IconPlay, IconRotate,
++  IconTransfer, IconVolume, IconVolumeOff, IconWalk, IconX,
++} from '../icons'
++import { Lapisan } from '../ui'
++import { arahPada, dekatiSudut, halus, ikonAngkot, ikonJalan, ikutiKamera, jarakM, putarPenanda, titikPada, useJam } from '../simulasi'
+ 
+-// Hitung jarak Haversine (meter)
+-export function hitungJarakM(p1, p2) {
+-  const R = 6371000
+-  const dLat = ((p2[0] - p1[0]) * Math.PI) / 180
+-  const dLng = ((p2[1] - p1[1]) * Math.PI) / 180
+-  const a =
+-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+-    Math.cos((p1[0] * Math.PI) / 180) * Math.cos((p2[0] * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+-}
+-
+-// Hitung sudut bearing/azimuth arah (0 - 360 derajat)
+-export function hitungBearing(p1, p2) {
+-  const lat1 = (p1[0] * Math.PI) / 180
+-  const lat2 = (p2[0] * Math.PI) / 180
+-  const dLng = ((p2[1] - p1[1]) * Math.PI) / 180
+-  const y = Math.sin(dLng) * Math.cos(lat2)
+-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(dLng)
+-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
+-}
++// Simulasi perjalanan (animasi, BUKAN pelacakan posisi asli): jalan kaki -> naik angkot -> (pindah) -> jalan kaki.
++// Lama tiap tahap sebanding perkiraan waktu nyatanya, dipadatkan jadi ±15–45 detik.
+ 
+-// Interpolasi koordinat garis agar pergerakan halus
+-function interpolasiGaris(p1, p2, jumlahTitik = 8) {
+-  const pts = []
+-  for (let i = 0; i <= jumlahTitik; i++) {
+-    const f = i / jumlahTitik
+-    pts.push([p1[0] + (p2[0] - p1[0]) * f, p1[1] + (p2[1] - p1[1]) * f])
+-  }
+-  return pts
+-}
+-
+-function hitungJarakTotal(pts) {
+-  let d = 0
+-  for (let i = 1; i < pts.length; i++) {
+-    d += hitungJarakM(pts[i - 1], pts[i])
+-  }
+-  return Math.round(d)
+-}
++const TUNGGU_MS = 1300 // jeda "menunggu angkot" sebelum angkot bergerak
++const IKON_TAHAP = { jalan: IconWalk, angkot: IconBus, transit: IconTransfer, tiba: IconFlag }
+ 
+-// [lat,lng] dari segmen GeoJSON
+-function ekstrakGaris(opsi) {
++function garisOpsi(opsi) {
+   const g = (s) => (s?.coordinates ?? []).map(([x, y]) => [y, x])
+   return 'kode_1' in opsi ? [g(opsi.segmen_1), g(opsi.segmen_2)] : [g(opsi.segmen)]
+ }
+ 
+-// Susun tahapan langkah & rangkaian titik navigasi
+-export function susunLangkahNavigasi(opsi, asal, tujuan, warna) {
+-  if (!opsi || !asal || !tujuan) return { langkah: [], pointsLengkap: [], totalJarakM: 0 }
+-
++/** tahapan + lintasan gabungan + pembagian waktu animasi */
++function susunLangkahNavigasi(opsi, asal, tujuan, warna) {
++  const kosong = { langkah: [], lin: { pts: [], kum: [0], total: 0 }, durasiMs: 1 }
++  if (!opsi || !asal || !tujuan) return kosong
+   const transfer = 'kode_1' in opsi
+-  const [g1, g2] = ekstrakGaris(opsi)
+-  if (!g1 || g1.length === 0) return { langkah: [], pointsLengkap: [], totalJarakM: 0 }
+-
+-  const awal = g1[0]
+-  const akhir = (g2 ?? g1)?.at(-1)
++  const [g1, g2] = garisOpsi(opsi)
++  if (!g1?.length) return kosong
+   const tt = transfer && opsi.titik_transfer ? [opsi.titik_transfer.coordinates[1], opsi.titik_transfer.coordinates[0]] : null
+-
+-  const langkah = []
+-
+-  // 1. Jalan Kaki Awal
+-  const ptsAwal = interpolasiGaris([asal.lat, asal.lng], awal, 10)
+-  const distAwal = opsi.jalan_ke_naik_m || hitungJarakTotal(ptsAwal)
+-  langkah.push({
+-    id: 'langkah-1',
+-    tipe: 'jalan',
+-    icon: '🚶',
+-    judul: 'Jalan Kaki ke Titik Tunggu',
+-    instruksi: `Jalan kaki ${jarak(distAwal)} ke titik naik Angkot ${nomor(transfer ? opsi.kode_1 : opsi.kode_trayek)}`,
+-    subInstruksi: `Tunggu angkot di tepi jalan / titik pemberhentian`,
+-    jarakM: distAwal,
+-    points: ptsAwal,
+-  })
+-
+-  // 2. Naik Angkot 1
+-  const kode1 = transfer ? opsi.kode_1 : opsi.kode_trayek
+-  const warna1 = warna[kode1] || '#1A936F'
+-  const arah1 = transfer ? opsi.arah_1 : opsi.arah
+-  const distAngkot1 = transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m
+-  langkah.push({
+-    id: 'langkah-2',
+-    tipe: 'angkot',
+-    kodeTrayek: kode1,
+-    warna: warna1,
+-    icon: '🚐',
+-    judul: `Naik Angkot ${nomor(kode1)}`,
+-    instruksi: `Naik Angkot ${nomor(kode1)} (arah ${arah1})`,
+-    subInstruksi: transfer ? `Tetap di angkot sampai titik transit` : `Tetap di angkot mendekati tujuan`,
+-    jarakM: distAngkot1,
+-    points: g1,
+-  })
+-
+-  // 3 & 4. Jika Transfer: Transit & Naik Angkot 2
+-  if (transfer && g2 && g2.length > 0) {
+-    const ptsTransit = tt
+-      ? [...interpolasiGaris(g1.at(-1), tt, 6), ...interpolasiGaris(tt, g2[0], 6).slice(1)]
+-      : interpolasiGaris(g1.at(-1), g2[0], 8)
+-    const distTransit = Math.max(30, hitungJarakTotal(ptsTransit))
+-    langkah.push({
+-      id: 'langkah-3',
+-      tipe: 'transit',
+-      icon: '🔁',
+-      judul: 'Transit / Pindah Angkot',
+-      instruksi: `Turun dari Angkot ${nomor(opsi.kode_1)}, pindah ke Angkot ${nomor(opsi.kode_2)}`,
+-      subInstruksi: `Jalan kaki ke titik naik Angkot ${nomor(opsi.kode_2)}`,
+-      jarakM: distTransit,
+-      points: ptsTransit,
+-    })
+-
+-    const kode2 = opsi.kode_2
+-    const warna2 = warna[kode2] || '#1A936F'
+-    const arah2 = opsi.arah_2
+-    const distAngkot2 = opsi.jarak_angkot_2_m
+-    langkah.push({
+-      id: 'langkah-4',
+-      tipe: 'angkot',
+-      kodeTrayek: kode2,
+-      warna: warna2,
+-      icon: '🚐',
+-      judul: `Naik Angkot ${nomor(kode2)}`,
+-      instruksi: `Naik Angkot ${nomor(kode2)} (arah ${arah2})`,
+-      subInstruksi: `Tetap di angkot sampai titik turun terdekat`,
+-      jarakM: distAngkot2,
+-      points: g2,
+-    })
++  const A = [asal.lat, asal.lng]
++  const B = [tujuan.lat, tujuan.lng]
++
++  const k1 = transfer ? opsi.kode_1 : opsi.kode_trayek
++  const tahap = [
++    {
++      tipe: 'jalan', titik: [A, g1[0]], jarakM: opsi.jalan_ke_naik_m,
++      judul: 'Jalan ke titik naik', instruksi: `Jalan ke jalur angkot ${nomor(k1)}`,
++      sub: 'Tunggu angkot di tepi jalan',
++    },
++    {
++      tipe: 'angkot', titik: g1, kode: k1, warna: warna[k1], jarakM: transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m,
++      judul: `Naik angkot ${nomor(k1)}`, instruksi: `Naik angkot ${nomor(k1)} arah ${transfer ? opsi.arah_1 : opsi.arah}`,
++      sub: transfer ? `Turun di titik pindah ke ${nomor(opsi.kode_2)}` : 'Turun di dekat tujuan',
++    },
++  ]
++  if (transfer && g2?.length) {
++    tahap.push(
++      {
++        tipe: 'transit', titik: tt ? [g1.at(-1), tt, g2[0]] : [g1.at(-1), g2[0]], jarakM: opsi.jalan_pindah_m,
++        judul: 'Pindah angkot', instruksi: `Turun, pindah ke angkot ${nomor(opsi.kode_2)}`, sub: 'Jalan sebentar ke jalur angkot berikutnya',
++      },
++      {
++        tipe: 'angkot', titik: g2, kode: opsi.kode_2, warna: warna[opsi.kode_2], jarakM: opsi.jarak_angkot_2_m,
++        judul: `Naik angkot ${nomor(opsi.kode_2)}`, instruksi: `Naik angkot ${nomor(opsi.kode_2)} arah ${opsi.arah_2}`,
++        sub: 'Turun di dekat tujuan',
++      },
++    )
+   }
+-
+-  // 5. Jalan Kaki Akhir ke Tujuan
+-  const ptsAkhir = interpolasiGaris(akhir, [tujuan.lat, tujuan.lng], 10)
+-  const distAkhir = opsi.jalan_dari_turun_m || hitungJarakTotal(ptsAkhir)
+-  langkah.push({
+-    id: 'langkah-akhir',
+-    tipe: 'jalan',
+-    icon: '🚶',
+-    judul: 'Jalan Kaki ke Tujuan',
+-    instruksi: `Turun dari angkot, jalan kaki ${jarak(distAkhir)} ke tujuan`,
+-    subInstruksi: `Tiba di ${tujuan?.nama || 'tujuan akhir'}`,
+-    jarakM: distAkhir,
+-    points: ptsAkhir,
++  tahap.push({
++    tipe: 'jalan', titik: [(g2?.length ? g2 : g1).at(-1), B], jarakM: opsi.jalan_dari_turun_m,
++    judul: 'Jalan ke tujuan', instruksi: `Jalan ke ${tujuan.nama || 'tujuan'}`, sub: 'Hampir sampai',
+   })
+ 
+-  // Bangun lintasan lengkap bersambung
+-  const pointsLengkap = []
+-  let distAccum = 0
+-
+-  langkah.forEach((l, stepIdx) => {
+-    l.startDistM = distAccum
+-    l.startIndex = pointsLengkap.length
+-
+-    l.points.forEach((p) => {
+-      if (pointsLengkap.length > 0) {
+-        const prev = pointsLengkap[pointsLengkap.length - 1]
+-        const d = hitungJarakM([prev.lat, prev.lng], p)
+-        distAccum += d
++  // lintasan gabungan + batas jarak tiap tahap
++  const pts = []
++  const kum = []
++  for (const t of tahap) {
++    t.mulaiM = kum.length ? kum[kum.length - 1] : 0
++    for (const p of t.titik) {
++      if (!pts.length) {
++        pts.push(p)
++        kum.push(0)
++        continue
+       }
+-      pointsLengkap.push({
+-        lat: p[0],
+-        lng: p[1],
+-        distM: distAccum,
+-        stepIndex: stepIdx,
+-      })
+-    })
++      const d = jarakM(pts[pts.length - 1], p)
++      if (d < 0.3) continue
++      pts.push(p)
++      kum.push(kum[kum.length - 1] + d)
++    }
++    t.akhirM = kum[kum.length - 1]
++    const m = t.jarakM ?? t.akhirM - t.mulaiM
++    t.jarakM = Math.round(m)
++    t.menit = t.tipe === 'angkot' ? m / 250 : m / 75
++  }
+ 
+-    l.endDistM = distAccum
+-    l.endIndex = pointsLengkap.length - 1
++  // waktu animasi: sebanding waktu nyata, total 15–45 detik
++  const menitTotal = tahap.reduce((s, t) => s + t.menit, 0) || 1
++  const msPerMenit = Math.min(Math.max(menitTotal * 1500, 15000), 45000) / menitTotal
++  let ms = 0
++  tahap.forEach((t, i) => {
++    t.id = `tahap-${i}`
++    t.mulaiMs = ms
++    ms += Math.max(1000, t.menit * msPerMenit) + (t.tipe === 'angkot' ? TUNGGU_MS : 0)
++    t.akhirMs = ms
++    delete t.titik
+   })
+-
+-  const totalJarakM = distAccum
+-  return { langkah, pointsLengkap, totalJarakM }
++  return { langkah: tahap, lin: { pts, kum, total: kum[kum.length - 1] ?? 0 }, durasiMs: ms }
+ }
+ 
+-// Icon penanda pengguna bergerak di peta
+-function buatIconNavigasi(tipe, rotasi, kode, warna) {
+-  if (tipe === 'angkot') {
+-    return L.divIcon({
+-      className: 'naik-icon-nav-angkot',
+-      html: `
+-        <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; transform:translate(-50%, -50%);">
+-          <div style="position:absolute; inset:-4px; border-radius:9999px; background:${warna || '#10B981'}; opacity:0.35; animation:naik-pulse 1.3s ease-out infinite;"></div>
+-          <div style="width:38px; height:38px; border-radius:9999px; background:#fff; border:3px solid ${warna || '#10B981'}; box-shadow:0 4px 14px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; transform:rotate(${rotasi}deg); transition:transform 0.1s ease;">
+-            <svg style="width:20px; height:20px; color:${warna || '#10B981'};" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+-              <path d="M8 6v6M15 6v6M2 12h19.6" />
+-              <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3" />
+-              <circle cx="7" cy="18" r="2" />
+-              <path d="M9 18h5" />
+-              <circle cx="16" cy="18" r="2" />
+-            </svg>
+-          </div>
+-          <div style="position:absolute; bottom:-7px; background:#0B3B2C; color:#fff; font-size:10px; font-weight:800; padding:1px 6px; border-radius:6px; border:1.5px solid #fff; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+-            ${kode ? nomor(kode) : 'Angkot'}
+-          </div>
+-        </div>
+-      `,
+-      iconSize: [0, 0],
+-    })
+-  }
+-
+-  // Tipe 'jalan' atau 'transit': Google Maps blue pulsing dot with directional cone
+-  return L.divIcon({
+-    className: 'naik-icon-nav-user',
+-    html: `
+-      <div style="position:relative; width:36px; height:36px; display:flex; align-items:center; justify-content:center; transform:translate(-50%, -50%);">
+-        <div style="position:absolute; inset:-4px; border-radius:9999px; background:#2563EB; opacity:0.35; animation:naik-pulse 1.3s ease-out infinite;"></div>
+-        <div style="width:28px; height:28px; border-radius:9999px; background:#fff; border:3px solid #2563EB; box-shadow:0 4px 12px rgba(37,99,235,0.4); display:flex; align-items:center; justify-content:center; transform:rotate(${rotasi}deg); transition:transform 0.1s ease;">
+-          <svg style="width:16px; height:16px; color:#2563EB;" viewBox="0 0 24 24" fill="currentColor">
+-            <path d="m3 11 19-9-9 19-2-8z" />
+-          </svg>
+-        </div>
+-      </div>
+-    `,
+-    iconSize: [0, 0],
+-  })
++/** waktu animasi -> { idx tahap, jarak di lintasan, sedang menunggu?, sisa menit nyata } */
++function keadaanPada(langkah, waktu) {
++  let i = langkah.findIndex((t) => waktu < t.akhirMs)
++  if (i < 0) i = langkah.length - 1
++  const t = langkah[i]
++  const tunggu = t.tipe === 'angkot' ? TUNGGU_MS : 0
++  const lokal = Math.max(0, waktu - t.mulaiMs - tunggu) / Math.max(1, t.akhirMs - t.mulaiMs - tunggu)
++  const f = t.tipe === 'angkot' ? halus(lokal) : Math.min(lokal, 1)
++  const sisaMenit = langkah.slice(i + 1).reduce((s, x) => s + x.menit, 0) + t.menit * (1 - f)
++  return { i, m: t.mulaiM + (t.akhirM - t.mulaiM) * f, menunggu: tunggu > 0 && waktu - t.mulaiMs < tunggu, f, sisaMenit }
+ }
+ 
+-export default function NavigasiSimulasi({
+-  opsi,
+-  asal,
+-  tujuan,
+-  warna,
+-  onKeluar,
+-  activeStepIdxExternal,
+-  setActiveStepIdxExternal,
+-}) {
++export default function NavigasiSimulasi({ opsi, asal, tujuan, warna, onKeluar, setActiveStepIdxExternal }) {
+   const map = useMap()
++  const { langkah, lin, durasiMs } = useMemo(() => susunLangkahNavigasi(opsi, asal, tujuan, warna), [opsi, asal, tujuan, warna])
++
++  const [jalan, setJalan] = useState(false)
++  const [kecepatan, setKecepatan] = useState(1)
++  const [ikuti, setIkuti] = useState(true)
++  const [suara, setSuara] = useState(false)
++  const [tiba, setTiba] = useState(false)
++  const [lebar, setLebar] = useState(false) // panel bawah diperluas
++  const [ui, setUi] = useState(() => ({ waktu: 0, ...keadaanPada(langkah, 0) }))
++
++  const penanda = useRef(null)
++  const jejak = useRef(null)
++  const sudut = useRef(null)
++  const ikonAktif = useRef(null)
++  const jejakTitik = useRef({ i: -1, arr: [] })
++  const uiTerakhir = useRef(0)
++  const ikutiRef = useRef(true)
++  useEffect(() => {
++    ikutiRef.current = ikuti
++  }, [ikuti])
+ 
+-  // Susun data lintasan dan langkah
+-  const { langkah, pointsLengkap, totalJarakM } = useMemo(
+-    () => susunLangkahNavigasi(opsi, asal, tujuan, warna),
+-    [opsi, asal, tujuan, warna],
+-  )
+-
+-  const [isPlaying, setIsPlaying] = useState(true)
+-  const [progress, setProgress] = useState(0) // 0 .. 1
+-  const [speed, setSpeed] = useState(1) // 1x, 2x, 4x
+-  const [ikutiKamera, setIkutiKamera] = useState(true)
+-  const [suaraAktif, setSuaraAktif] = useState(false)
+-  const [sudahTiba, setSudahTiba] = useState(false)
+-
+-  // Sheet state: 'peek' (mini bottom bar yang tidak menutupi peta) vs 'expanded' (detail langkah)
+-  const [sheetState, setSheetState] = useState('peek')
+-
+-  const animFrameRef = useRef(null)
+-  const lastTimeRef = useRef(null)
+-  const progressRef = useRef(0)
+-  const isPlayingRef = useRef(true)
+-  const ikutiKameraRef = useRef(true)
+-  const speedRef = useRef(1)
+-  const lastSpokenStepRef = useRef(-1)
++  const ikon = useMemo(() => langkah.map((t) => (t.tipe === 'angkot' ? ikonAngkot(nomor(t.kode), t.warna) : ikonJalan())), [langkah])
++  const posAwal = useMemo(() => lin.pts[0] ?? [asal.lat, asal.lng], [lin, asal])
++  const jejakKosong = useMemo(() => [], [])
+ 
+-  progressRef.current = progress
+-  isPlayingRef.current = isPlaying
+-  ikutiKameraRef.current = ikutiKamera
+-  speedRef.current = speed
++  useMapEvents({ dragstart: () => setIkuti(false) })
+ 
+-  // Deteksi gesture drag user di peta -> nonaktifkan auto-pan kamera agar user bebas geser
+-  useMapEvents({
+-    dragstart: () => {
+-      setIkutiKamera(false)
+-    },
+-  })
+-
+-  // Suara panduan via Web Speech API (opsional)
+   const ucapkan = useCallback(
+     (teks) => {
+-      if (!suaraAktif || !('speechSynthesis' in window)) return
++      if (!suara || !('speechSynthesis' in window)) return
+       try {
+         window.speechSynthesis.cancel()
+         const u = new SpeechSynthesisUtterance(teks)
+         u.lang = 'id-ID'
+-        u.rate = 1.05
+         window.speechSynthesis.speak(u)
+       } catch {
+         /* abaikan */
+       }
+     },
+-    [suaraAktif],
++    [suara],
+   )
+ 
+-  // Zoom awal ke titik keberangkatan saat navigasi dimulai
+-  useEffect(() => {
+-    if (!pointsLengkap.length) return
+-    const awal = [pointsLengkap[0].lat, pointsLengkap[0].lng]
+-    map.flyTo(awal, 17, { duration: 1.2 })
+-    lastSpokenStepRef.current = -1
+-  }, [map, pointsLengkap])
+-
+-  // Interpolasi posisi marker, heading bearing, dan active step saat ini
+-  const { posisi, rotasi, activeStep, activeStepIdx, sisaMeterStep, sisaTotalM, sisaWaktuMenit } = useMemo(() => {
+-    if (!pointsLengkap.length) {
+-      return {
+-        posisi: [asal?.lat || 0, asal?.lng || 0],
+-        rotasi: 0,
+-        activeStep: langkah[0] || null,
+-        activeStepIdx: 0,
+-        sisaMeterStep: 0,
+-        sisaTotalM: 0,
+-        sisaWaktuMenit: 0,
++  // gambar satu frame: posisi, arah, ikon tahap, jejak, kamera; teks UI diperbarui ±8x/detik
++  const gambar = useCallback(
++    (waktu, dt) => {
++      if (!lin.pts.length) return
++      const k = keadaanPada(langkah, waktu)
++      const { pos, i } = titikPada(lin, k.m)
++      const m = penanda.current
++      if (m) {
++        if (ikonAktif.current !== k.i) {
++          ikonAktif.current = k.i
++          m.setIcon(ikon[k.i])
++        }
++        m.setLatLng(pos)
++        const target = arahPada(lin, k.m)
++        if (target != null) sudut.current = dt ? dekatiSudut(sudut.current, target, 1 - Math.exp(-dt / 140)) : target
++        putarPenanda(m, sudut.current)
+       }
+-    }
+-
+-    const targetDist = progress * totalJarakM
+-
+-    let idx = 0
+-    while (idx < pointsLengkap.length - 1 && pointsLengkap[idx + 1].distM < targetDist) {
+-      idx++
+-    }
+-
+-    const p1 = pointsLengkap[idx]
+-    const p2 = pointsLengkap[Math.min(pointsLengkap.length - 1, idx + 1)]
+-    const segDist = p2.distM - p1.distM
+-    const frac = segDist > 0 ? (targetDist - p1.distM) / segDist : 0
+-
+-    const lat = p1.lat + (p2.lat - p1.lat) * frac
+-    const lng = p1.lng + (p2.lng - p1.lng) * frac
+-    const rot = hitungBearing([p1.lat, p1.lng], [p2.lat, p2.lng])
+-
+-    const stepIdx = p1.stepIndex
+-    const currentStep = langkah[stepIdx] || langkah[0]
+-    const sisaStep = Math.max(0, Math.round((currentStep?.endDistM ?? 0) - targetDist))
+-    const sisaTot = Math.max(0, Math.round(totalJarakM - targetDist))
+-
+-    const sisaMenit = Math.max(1, Math.round((sisaTot / 1000) * 3.5))
+-
+-    return {
+-      posisi: [lat, lng],
+-      rotasi: rot,
+-      activeStep: currentStep,
+-      activeStepIdx: stepIdx,
+-      sisaMeterStep: sisaStep,
+-      sisaTotalM: sisaTot,
+-      sisaWaktuMenit: sisaMenit,
+-    }
+-  }, [progress, totalJarakM, pointsLengkap, langkah, asal])
++      const j = jejak.current
++      if (j) {
++        const s = jejakTitik.current
++        if (s.i !== i) s.arr = lin.pts.slice(0, i + 1).concat([pos])
++        else s.arr[s.arr.length - 1] = pos
++        s.i = i
++        j.setLatLngs(s.arr)
++      }
++      if (ikutiRef.current && dt) ikutiKamera(map, pos, dt)
++      const kini = performance.now()
++      if (!dt || kini - uiTerakhir.current > 120) {
++        uiTerakhir.current = kini
++        setUi({ waktu, ...k })
++      }
++    },
++    [langkah, lin, ikon, map],
++  )
+ 
+-  // Sync external active step index
+-  useEffect(() => {
+-    if (setActiveStepIdxExternal) {
+-      setActiveStepIdxExternal(activeStepIdx)
+-    }
+-  }, [activeStepIdx, setActiveStepIdxExternal])
++  const jam = useJam({
++    durasiMs,
++    jalan,
++    kecepatan,
++    onFrame: gambar,
++    onSelesai: () => {
++      setJalan(false)
++      setTiba(true)
++      setUi((u) => ({ ...u, waktu: durasiMs, ...keadaanPada(langkah, durasiMs) }))
++      setTimeout(() => map.flyToBounds(L.latLngBounds(lin.pts), { padding: [80, 80], duration: 1 }), 700)
++    },
++  })
+ 
+-  // Ucapkan saat berpindah langkah
++  // mulai: terbang ke titik awal dulu, baru jalan (supaya animasi kamera tidak bentrok)
+   useEffect(() => {
+-    if (activeStepIdx !== lastSpokenStepRef.current && activeStep) {
+-      lastSpokenStepRef.current = activeStepIdx
+-      ucapkan(activeStep.instruksi)
+-    }
+-  }, [activeStepIdx, activeStep, ucapkan])
+-
+-  // Jejak yang sudah dilalui
+-  const jalurDilalui = useMemo(() => {
+-    if (!pointsLengkap.length) return []
+-    const targetDist = progress * totalJarakM
+-    let idx = 0
+-    while (idx < pointsLengkap.length - 1 && pointsLengkap[idx + 1].distM < targetDist) {
+-      idx++
+-    }
+-    const pts = pointsLengkap.slice(0, idx + 1).map((p) => [p.lat, p.lng])
+-    pts.push(posisi)
+-    return pts
+-  }, [pointsLengkap, progress, totalJarakM, posisi])
++    if (!lin.pts.length) return
++    jam.setWaktu(0)
++    setTiba(false)
++    map.flyTo(lin.pts[0], Math.max(map.getZoom(), 17), { duration: 0.9 })
++    const t = setTimeout(() => setJalan(true), 950)
++    return () => clearTimeout(t)
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [lin])
+ 
+-  // Loop animasi requestAnimationFrame
+   useEffect(() => {
+-    if (!isPlaying) {
+-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+-      return
+-    }
+-
+-    const baseDurationMs = 28000 // 28 detik untuk perjalanan penuh pada 1x
+-
+-    const step = (time) => {
+-      if (!lastTimeRef.current) lastTimeRef.current = time
+-      const delta = time - lastTimeRef.current
+-      lastTimeRef.current = time
+-
+-      const deltaProgress = delta / (baseDurationMs / speedRef.current)
+-      const nextProgress = Math.min(1, progressRef.current + deltaProgress)
+-      progressRef.current = nextProgress
+-      setProgress(nextProgress)
+-
+-      // Pastikan posisi tracking tetap di tengah layar
+-      if (ikutiKameraRef.current && posisi) {
+-        map.panTo(posisi, { animate: false })
+-      }
+-
+-      if (nextProgress >= 1) {
+-        setIsPlaying(false)
+-        setSudahTiba(true)
+-        if (pointsLengkap.length > 0) {
+-          setTimeout(() => {
+-            const b = L.latLngBounds(pointsLengkap.map((p) => [p.lat, p.lng]))
+-            map.flyToBounds(b, { padding: [80, 80], duration: 1.2 })
+-          }, 1200)
+-        }
+-      } else {
+-        animFrameRef.current = requestAnimationFrame(step)
+-      }
+-    }
+-
+-    lastTimeRef.current = performance.now()
+-    animFrameRef.current = requestAnimationFrame(step)
+-
+-    return () => {
+-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+-    }
+-  }, [isPlaying, map, pointsLengkap, posisi])
++    setActiveStepIdxExternal?.(ui.i)
++    if (langkah[ui.i]) ucapkan(langkah[ui.i].instruksi)
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [ui.i])
++
++  function lompat(ms) {
++    jam.setWaktu(ms)
++    setTiba(false)
++    setIkuti(true)
++    setJalan(true)
++  }
+ 
+-  // Estimasi jam tiba
++  const aktif = langkah[ui.i]
++  const IkonAktif = tiba ? IconFlag : IKON_TAHAP[aktif?.tipe] ?? IconWalk
++  const sisaTahapM = aktif ? Math.max(0, Math.round(aktif.akhirM - ui.m)) : 0
++  const sisaMenit = Math.max(tiba ? 0 : 1, Math.round(ui.sisaMenit))
++  const sisaM = Math.max(0, lin.total - ui.m)
++  const persen = Math.min(100, (ui.waktu / durasiMs) * 100)
+   const jamTiba = useMemo(() => {
+-    const d = new Date()
+-    d.setMinutes(d.getMinutes() + sisaWaktuMenit)
++    const d = new Date(Date.now() + sisaMenit * 60000)
+     return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+-  }, [sisaWaktuMenit])
++  }, [sisaMenit])
+ 
+-  // Tombol loncat ke langkah tertentu
+-  const lompatKeLangkah = (idx) => {
+-    const l = langkah[idx]
+-    if (!l) return
+-    const newProgress = Math.min(0.999, l.startDistM / (totalJarakM || 1))
+-    setProgress(newProgress)
+-    progressRef.current = newProgress
+-    setIsPlaying(true)
+-    setSudahTiba(false)
+-    lastTimeRef.current = performance.now()
+-    setIkutiKamera(true)
+-    if (l.points?.[0]) map.panTo(l.points[0], { animate: true })
+-  }
+-
+-  // Swipe gesture untuk adjust bottom sheet di HP (swipe up = expand, swipe down = peek)
+-  const touchStartY = useRef(0)
+-  const handleTouchStart = (e) => {
+-    touchStartY.current = e.touches[0].clientY
+-  }
+-  const handleTouchEnd = (e) => {
+-    const deltaY = e.changedTouches[0].clientY - touchStartY.current
+-    if (deltaY < -40) {
+-      setSheetState('expanded')
+-    } else if (deltaY > 40) {
+-      setSheetState('peek')
+-    }
+-  }
+-
+-  const iconUser = useMemo(() => {
+-    return buatIconNavigasi(activeStep?.tipe || 'jalan', rotasi, activeStep?.kodeTrayek, activeStep?.warna)
+-  }, [activeStep, rotasi])
++  const judulAtas = tiba
++    ? `Sampai di ${tujuan?.nama || 'tujuan'}`
++    : ui.menunggu
++      ? `Tunggu angkot ${nomor(aktif?.kode)}`
++      : aktif?.instruksi
+ 
+   return (
+     <>
+-      {/* 1. Lintasan jejak yang sudah dilalui */}
+-      {jalurDilalui.length > 1 && (
+-        <Polyline
+-          positions={jalurDilalui}
+-          pathOptions={{ color: '#059669', weight: 8, opacity: 0.6, lineCap: 'round', lineJoin: 'round' }}
+-        />
+-      )}
+-
+-      {/* 2. Marker tracking pengguna di tengah peta */}
+-      {posisi && <Marker position={posisi} icon={iconUser} zIndexOffset={1000} />}
+-
+-      {/* 3. Top Google Maps Navigation HUD (Ringkas & pas di HP) */}
+-      <div className="fixed top-2.5 left-2.5 right-2.5 z-[1100] mx-auto max-w-lg lg:top-4">
+-        <div className="flex flex-col overflow-hidden rounded-2xl bg-[#092B21] text-white shadow-[0_12px_40px_rgba(9,43,33,0.45)] ring-1 ring-white/15 backdrop-blur-md">
+-          {/* Header instruksi utama */}
+-          <div className="flex items-center gap-2.5 p-2.5 sm:gap-3.5 sm:p-3.5 lg:p-4">
+-            {/* Box ikon instruksi besar */}
+-            <div className="flex h-11 w-11 sm:h-12 sm:w-12 shrink-0 items-center justify-center rounded-xl bg-[#10B981] text-xl sm:text-2xl text-white shadow-md">
+-              {activeStep?.icon || '🚶'}
+-            </div>
+-
+-            {/* Teks Instruksi & Countdown (Tidak terpotong/patah) */}
+-            <div className="min-w-0 flex-1">
+-              <div className="flex items-center gap-1.5 sm:gap-2">
+-                <span className="font-display text-base font-black tracking-tight text-white whitespace-nowrap sm:text-lg lg:text-xl">
+-                  {sisaMeterStep > 0 ? `${sisaMeterStep} m` : 'Sekarang'}
+-                </span>
+-                <span className="truncate text-xs font-bold text-emerald-200 sm:text-sm">
+-                  {activeStep?.instruksi || 'Menuju tujuan'}
+-                </span>
+-              </div>
+-              <p className="mt-0.5 truncate text-[11px] text-white/70 sm:text-xs">
+-                {activeStep?.subInstruksi || 'Ikuti jalur panduan peta'}
+-              </p>
+-            </div>
+-
+-            {/* Tombol aksi cepat: Play/Pause, Kecepatan, Keluar */}
+-            <div className="flex items-center gap-1 shrink-0">
+-              <button
+-                onClick={() => setIsPlaying((p) => !p)}
+-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg sm:rounded-xl bg-white/10 text-white transition hover:bg-white/20 active:scale-95"
+-                title={isPlaying ? 'Jeda' : 'Lanjutkan'}
+-              >
+-                {isPlaying ? '⏸' : '▶'}
+-              </button>
+-              <button
+-                onClick={() => {
+-                  const speeds = [1, 2, 4]
+-                  const next = speeds[(speeds.indexOf(speed) + 1) % speeds.length]
+-                  setSpeed(next)
+-                }}
+-                className="flex h-8 px-2 sm:h-9 items-center justify-center rounded-lg sm:rounded-xl bg-white/10 text-xs font-bold text-emerald-300 transition hover:bg-white/20 active:scale-95"
+-                title="Kecepatan simulasi"
+-              >
+-                {speed}x
+-              </button>
+-              <button
+-                onClick={onKeluar}
+-                className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg sm:rounded-xl bg-red-500/85 text-white transition hover:bg-red-600 active:scale-95"
+-                title="Keluar Navigasi"
+-              >
+-                <IconX className="h-4 w-4" />
+-              </button>
+-            </div>
+-          </div>
+-
+-          {/* Selesai / Tiba Banner */}
+-          {sudahTiba && (
+-            <div className="flex items-center justify-between border-t border-emerald-500/30 bg-emerald-700/70 px-3.5 py-2 text-xs font-bold text-white">
+-              <span>🎉 Anda telah tiba di {tujuan?.nama || 'tujuan'}!</span>
+-              <button
+-                onClick={onKeluar}
+-                className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-emerald-900 shadow-sm hover:bg-emerald-50"
+-              >
+-                Selesai
+-              </button>
+-            </div>
+-          )}
+-        </div>
+-      </div>
+-
+-      {/* 4. Bottom Sheet UX (Bisa digeser ke atas / ke bawah, tidak menutupi tengah peta) */}
+-      <div
+-        className={`fixed left-2.5 right-2.5 z-[1100] mx-auto max-w-lg transition-all duration-300 ease-out lg:bottom-4 lg:left-1/2 lg:-translate-x-1/2 lg:w-full ${
+-          sheetState === 'expanded' ? 'bottom-2.5' : 'bottom-2 sm:bottom-3'
+-        }`}
+-        onTouchStart={handleTouchStart}
+-        onTouchEnd={handleTouchEnd}
+-      >
+-        <div
+-          className={`flex flex-col overflow-hidden rounded-3xl bg-white shadow-[0_16px_48px_rgba(21,30,44,0.28)] ring-1 ring-black/8 transition-all duration-300 ${
+-            sheetState === 'expanded' ? 'max-h-[68vh]' : 'max-h-[145px]'
+-          }`}
+-        >
+-          {/* Grab handle untuk swipe / adjust tinggi */}
+-          <div
+-            onClick={() => setSheetState((s) => (s === 'peek' ? 'expanded' : 'peek'))}
+-            className="flex cursor-pointer flex-col items-center pt-2 pb-1 hover:bg-mist/30 transition select-none"
+-            title={sheetState === 'peek' ? 'Geser ke atas untuk rincian' : 'Geser ke bawah untuk memperkecil'}
++      <Polyline ref={jejak} positions={jejakKosong} pathOptions={{ color: '#0E7C5A', weight: 7, opacity: 0.55, lineCap: 'round', lineJoin: 'round' }} interactive={false} />
++      <Marker ref={penanda} position={posAwal} icon={ikon[0] ?? ikonJalan()} zIndexOffset={1000} interactive={false} />
++
++      {/* instruksi atas */}
++      <Lapisan className="fixed top-2.5 right-2.5 left-2.5 z-[1100] mx-auto max-w-lg lg:top-4">
++        <div className="flex items-center gap-3 rounded-2xl bg-[#0B3B2C] p-3 text-white shadow-[0_12px_36px_rgba(9,43,33,0.4)] sm:p-3.5">
++          <span
++            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white"
++            style={{ backgroundColor: aktif?.tipe === 'angkot' && !tiba ? aktif.warna : '#13A36F' }}
+           >
+-            <div className="h-1.5 w-12 rounded-full bg-gray-300 hover:bg-gray-400" />
++            <IkonAktif className="h-6 w-6" />
++          </span>
++          <div className="min-w-0 flex-1">
++            <p className="flex items-center gap-2">
++              {!tiba && !ui.menunggu && (
++                <span className="font-display text-[17px] font-bold whitespace-nowrap">{jarak(sisaTahapM)}</span>
++              )}
++              <span className="truncate text-[13px] font-semibold text-emerald-100">{judulAtas}</span>
++            </p>
++            <p className="mt-0.5 truncate text-[11.5px] text-white/65">
++              <span className="mr-1.5 rounded bg-white/15 px-1.5 py-px text-[10px] font-bold tracking-wide uppercase">Simulasi</span>
++              {tiba ? 'Perjalanan selesai' : ui.menunggu ? 'Angkot datang sebentar lagi' : aktif?.sub}
++            </p>
+           </div>
+-
+-          {/* Baris Status Utama (Ringkas & Bersih) */}
+-          <div className="px-3.5 pb-2.5 pt-0.5 sm:px-4">
+-            <div className="flex items-center justify-between gap-2">
+-              <div
+-                className="min-w-0 flex-1 cursor-pointer"
+-                onClick={() => setSheetState((s) => (s === 'peek' ? 'expanded' : 'peek'))}
+-              >
+-                <div className="flex items-baseline gap-2">
+-                  <span className="font-display text-xl font-black text-emerald-600 sm:text-2xl">
+-                    {sisaWaktuMenit} mnt
+-                  </span>
+-                  <span className="truncate text-xs font-bold text-dark/75">
+-                    {jarak(sisaTotalM)} · Tiba {jamTiba}
++          <div className="flex shrink-0 items-center gap-1">
++            {tiba ? (
++              <TombolGelap onClick={() => lompat(0)} label="Ulangi simulasi">
++                <IconRotate className="h-4 w-4" />
++              </TombolGelap>
++            ) : (
++              <TombolGelap onClick={() => setJalan((j) => !j)} label={jalan ? 'Jeda' : 'Lanjutkan'}>
++                {jalan ? <IconPause className="h-4 w-4" /> : <IconPlay className="h-4 w-4" />}
++              </TombolGelap>
++            )}
++            <TombolGelap onClick={() => setKecepatan((k) => (k === 1 ? 2 : k === 2 ? 4 : 1))} label="Kecepatan simulasi">
++              <span className="text-[12px] font-bold text-emerald-200">{kecepatan}×</span>
++            </TombolGelap>
++            <TombolGelap onClick={onKeluar} label="Keluar simulasi" merah>
++              <IconX className="h-4 w-4" />
++            </TombolGelap>
++          </div>
++        </div>
++      </Lapisan>
++
++      {/* panel bawah: ringkasan, progres, tahapan */}
++      <Lapisan className="fixed right-2.5 bottom-2.5 left-2.5 z-[1100] mx-auto max-w-lg lg:bottom-4">
++        <div className={`flex flex-col overflow-hidden rounded-3xl bg-white shadow-[0_16px_48px_rgba(21,30,44,0.26)] ring-1 ring-black/5 ${lebar ? 'max-h-[64vh]' : ''}`}>
++          <div className="px-4 pt-3 pb-3">
++            <div className="flex items-center gap-3">
++              <button onClick={() => setLebar((l) => !l)} className="min-w-0 flex-1 text-left">
++                <p className="flex items-baseline gap-2">
++                  <span className="font-display text-[22px] font-bold text-primary">{tiba ? 'Tiba' : `${sisaMenit} mnt`}</span>
++                  <span className="truncate text-[12.5px] font-semibold text-dark/65">
++                    {tiba ? tujuan?.nama : `${jarak(sisaM)} · tiba ±${jamTiba}`}
+                   </span>
+-                </div>
+-                <p className="mt-0.5 truncate text-[11px] font-medium text-dark/55">
+-                  {sudahTiba ? 'Perjalanan selesai' : `${activeStep?.judul || 'Menuju lokasi'} (${activeStepIdx + 1}/${langkah.length})`}
+                 </p>
+-              </div>
+-
+-              {/* Action buttons */}
+-              <div className="flex items-center gap-1.5 shrink-0">
+-                {/* Suara */}
+-                <button
+-                  onClick={() => {
+-                    const s = !suaraAktif
+-                    setSuaraAktif(s)
+-                    if (s && activeStep) ucapkan(activeStep.instruksi)
+-                  }}
+-                  className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl border text-sm transition active:scale-95 ${
+-                    suaraAktif
+-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+-                      : 'border-border-nav text-dark/60 hover:bg-mist'
+-                  }`}
+-                  title={suaraAktif ? 'Suara panduan aktif' : 'Aktifkan suara panduan'}
+-                >
+-                  {suaraAktif ? '🔊' : '🔇'}
+-                </button>
+-
+-                {/* Pusatkan Kamera ke Tracking Tengah */}
+-                <button
+-                  onClick={() => {
+-                    setIkutiKamera(true)
+-                    if (posisi) map.flyTo(posisi, Math.max(map.getZoom(), 17), { duration: 0.5 })
+-                  }}
+-                  className={`flex h-8 items-center gap-1 rounded-xl border px-2 text-xs font-bold transition active:scale-95 sm:h-9 sm:px-2.5 ${
+-                    ikutiKamera
+-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+-                      : 'border-emerald-500 bg-emerald-600 text-white shadow-sm animate-pulse'
+-                  }`}
+-                  title="Pusatkan kamera ke posisi saat ini"
+-                >
+-                  <span>🎯</span>
+-                  <span className="text-[11px] sm:text-xs">Pusatkan</span>
+-                </button>
+-
+-                {/* Tombol Atur / Adjust Langkah (Naik/Turun) */}
+-                <button
+-                  onClick={() => setSheetState((s) => (s === 'peek' ? 'expanded' : 'peek'))}
+-                  className="flex h-8 items-center gap-1 rounded-xl bg-tentang-dark px-2.5 text-xs font-bold text-white transition hover:bg-tentang-dark/90 active:scale-95 sm:h-9 sm:px-3"
+-                  title="Buka / Tutup Rincian Langkah"
+-                >
+-                  <span>{sheetState === 'expanded' ? '▼' : '▲'}</span>
+-                  <span className="text-[11px] sm:text-xs">{sheetState === 'expanded' ? 'Perkecil' : 'Rincian'}</span>
+-                </button>
+-              </div>
+-            </div>
+-
+-            {/* Progress Bar Interaktif */}
+-            <div className="relative mt-2">
+-              <div
+-                className="relative h-2 w-full cursor-pointer overflow-hidden rounded-full bg-gray-100"
+-                onClick={(e) => {
+-                  const rect = e.currentTarget.getBoundingClientRect()
+-                  const clickX = e.clientX - rect.left
+-                  const newProg = Math.max(0, Math.min(1, clickX / rect.width))
+-                  setProgress(newProg)
+-                  progressRef.current = newProg
+-                  setIsPlaying(true)
+-                  setSudahTiba(false)
+-                  lastTimeRef.current = performance.now()
++                <p className="truncate text-[11.5px] text-dark/50">
++                  Tahap {Math.min(ui.i + 1, langkah.length)} dari {langkah.length} · {aktif?.judul}
++                </p>
++              </button>
++              <TombolTerang
++                aktif={suara}
++                label={suara ? 'Matikan suara panduan' : 'Nyalakan suara panduan'}
++                onClick={() => {
++                  setSuara((s) => !s)
++                  if (!suara && aktif && 'speechSynthesis' in window) {
++                    const u = new SpeechSynthesisUtterance(aktif.instruksi)
++                    u.lang = 'id-ID'
++                    window.speechSynthesis.speak(u)
++                  }
+                 }}
+               >
+-                <div
+-                  className="h-full bg-gradient-to-r from-emerald-500 to-primary transition-all duration-100"
+-                  style={{ width: `${Math.round(progress * 100)}%` }}
+-                />
+-              </div>
++                {suara ? <IconVolume className="h-4 w-4" /> : <IconVolumeOff className="h-4 w-4" />}
++              </TombolTerang>
++              <TombolTerang
++                aktif={ikuti}
++                label="Ikuti posisi simulasi"
++                onClick={() => {
++                  setIkuti(true)
++                  map.flyTo(titikPada(lin, ui.m).pos, Math.max(map.getZoom(), 16), { duration: 0.5 })
++                }}
++              >
++                <IconCrosshair className="h-4 w-4" />
++              </TombolTerang>
++              <TombolTerang label={lebar ? 'Perkecil' : 'Lihat tahapan'} onClick={() => setLebar((l) => !l)}>
++                {lebar ? <IconChevronDown className="h-4 w-4" /> : <IconChevronUp className="h-4 w-4" />}
++              </TombolTerang>
++            </div>
+ 
+-              {/* Titik Checkpoint Langkah */}
+-              <div className="pointer-events-none absolute inset-y-0 left-0 right-0 flex items-center justify-between px-1">
+-                {langkah.map((l) => {
+-                  const pct = totalJarakM > 0 ? (l.startDistM / totalJarakM) * 100 : 0
+-                  const isPassed = progress * 100 >= pct
+-                  return (
++            {/* progres: tiap tahap satu potongan, bisa diklik untuk lompat */}
++            <div
++              className="relative mt-3 flex h-2 cursor-pointer gap-0.5"
++              onClick={(e) => {
++                const r = e.currentTarget.getBoundingClientRect()
++                lompat(((e.clientX - r.left) / r.width) * durasiMs)
++              }}
++              role="slider"
++              aria-label="Posisi simulasi"
++              aria-valuenow={Math.round(persen)}
++            >
++              {langkah.map((t) => {
++                const w = ((t.akhirMs - t.mulaiMs) / durasiMs) * 100
++                const isi = Math.min(1, Math.max(0, (ui.waktu - t.mulaiMs) / (t.akhirMs - t.mulaiMs)))
++                return (
++                  <span key={t.id} className="relative h-full overflow-hidden rounded-full bg-[#E8EEEE]" style={{ width: `${w}%` }}>
+                     <span
+-                      key={l.id}
+-                      style={{ left: `${pct}%` }}
+-                      className={`absolute h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 border-white shadow-xs ${
+-                        isPassed ? 'bg-emerald-600' : 'bg-gray-300'
+-                      }`}
++                      className="absolute inset-y-0 left-0 rounded-full"
++                      style={{ width: `${isi * 100}%`, backgroundColor: t.tipe === 'angkot' ? t.warna : '#2563EB' }}
+                     />
+-                  )
+-                })}
+-              </div>
++                  </span>
++                )
++              })}
+             </div>
+           </div>
+ 
+-          {/* Konten Saat Sheet Diperluas (Expanded List of Steps) */}
+-          {sheetState === 'expanded' && (
+-            <div className="naik-scroll flex-1 overflow-y-auto border-t border-[#EDF1F2] px-3.5 py-3 sm:px-5">
+-              <div className="mb-2.5 flex items-center justify-between">
+-                <h4 className="text-[11px] sm:text-xs font-bold tracking-wider text-dark/50 uppercase">
+-                  Tahapan Rute Perjalanan
+-                </h4>
+-                <button
+-                  onClick={() => setSheetState('peek')}
+-                  className="rounded-lg bg-mist/60 px-2 py-0.5 text-xs font-bold text-dark/70 hover:bg-mist"
+-                >
+-                  ▼ Perkecil
+-                </button>
+-              </div>
+-
+-              {/* Timeline langkah-langkah di dalam sheet */}
+-              <div className="relative space-y-3 before:absolute before:top-3 before:bottom-3 before:left-[15px] before:w-[2px] before:bg-[#E3E8EA]">
+-                {langkah.map((l, idx) => {
+-                  const isCurrent = activeStepIdx === idx
+-                  return (
+-                    <div
+-                      key={l.id}
+-                      onClick={() => lompatKeLangkah(idx)}
+-                      className={`relative flex cursor-pointer items-start gap-3 pl-1 transition-all rounded-xl p-2 -ml-1 ${
+-                        isCurrent
+-                          ? 'bg-emerald-50/90 ring-1.5 ring-emerald-500/40 shadow-xs'
+-                          : 'hover:bg-mist/40'
+-                      }`}
++          {lebar && (
++            <ol className="naik-scroll min-h-0 flex-1 overflow-y-auto border-t border-[#EDF1F2] px-3 py-2">
++              {langkah.map((t, idx) => {
++                const Ikon = IKON_TAHAP[t.tipe]
++                const kini = idx === ui.i && !tiba
++                const lewat = idx < ui.i || tiba
++                return (
++                  <li key={t.id}>
++                    <button
++                      onClick={() => lompat(t.mulaiMs)}
++                      className={`flex w-full items-start gap-3 rounded-xl p-2 text-left transition ${kini ? 'bg-primary/8 ring-1 ring-primary/25' : 'hover:bg-[#F4F7F7]'}`}
+                     >
+                       <span
+-                        className={`z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-white text-sm shadow-sm ${
+-                          isCurrent ? 'bg-emerald-600 text-white' : 'bg-[#EAF4EE] text-dark'
+-                        }`}
++                        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${lewat ? 'opacity-50' : ''}`}
++                        style={{ backgroundColor: t.tipe === 'angkot' ? t.warna : '#E7EEFD', color: t.tipe === 'angkot' ? '#fff' : '#2563EB' }}
+                       >
+-                        {l.icon}
++                        <Ikon className="h-4 w-4" />
+                       </span>
+-                      <div className="min-w-0 flex-1 pt-0.5">
+-                        <div className="flex items-center gap-1.5">
+-                          <p className="text-xs font-bold text-dark">{l.judul}</p>
+-                          {isCurrent && (
+-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-bold text-white shadow-xs">
+-                              <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping"></span>
+-                              Sedang Berjalan
+-                            </span>
+-                          )}
+-                        </div>
+-                        <p className="mt-0.5 text-xs text-dark/75">{l.instruksi}</p>
+-                        <p className="mt-0.5 text-[11px] text-dark/50">{l.subInstruksi}</p>
+-                      </div>
+-                    </div>
+-                  )
+-                })}
+-              </div>
+-              <div className="h-5 shrink-0" aria-hidden="true" />
+-            </div>
++                      <span className="min-w-0 flex-1">
++                        <span className="flex items-center gap-2">
++                          <span className={`text-[13px] font-semibold ${lewat ? 'text-dark/45' : 'text-dark'}`}>{t.judul}</span>
++                          {kini && <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-bold text-white">sekarang</span>}
++                        </span>
++                        <span className="block text-[12px] text-dark/60">
++                          {jarak(t.jarakM)} · ±{t.tipe === 'angkot' ? menitAngkot(t.jarakM) : menitJalan(t.jarakM)} mnt
++                          {t.tipe === 'angkot' ? ` · ${t.instruksi.replace(/^Naik angkot \S+ /, '')}` : ''}
++                        </span>
++                      </span>
++                    </button>
++                  </li>
++                )
++              })}
++            </ol>
+           )}
+         </div>
+-      </div>
++      </Lapisan>
+     </>
+   )
+ }
++
++function TombolGelap({ onClick, label, merah, children }) {
++  return (
++    <button
++      onClick={onClick}
++      title={label}
++      aria-label={label}
++      className={`flex h-9 min-w-9 items-center justify-center rounded-xl px-2 text-white transition active:scale-95 ${merah ? 'bg-[#C8432E] hover:bg-[#B23A27]' : 'bg-white/12 hover:bg-white/20'}`}
++    >
++      {children}
++    </button>
++  )
++}
++
++function TombolTerang({ onClick, label, aktif, children }) {
++  return (
++    <button
++      onClick={onClick}
++      title={label}
++      aria-label={label}
++      aria-pressed={aktif}
++      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition active:scale-95 ${aktif ? 'border-primary/40 bg-primary/8 text-primary' : 'border-[#E3E8EA] text-dark/60 hover:bg-[#F4F7F7]'}`}
++    >
++      {children}
++    </button>
++  )
++}
+diff --git a/frontend/src/dashboard/components/RutePopup.jsx b/frontend/src/dashboard/components/RutePopup.jsx
+index 0a451ef..3633f72 100644
+--- a/frontend/src/dashboard/components/RutePopup.jsx
++++ b/frontend/src/dashboard/components/RutePopup.jsx
+@@ -1,24 +1,29 @@
+ import { Popup } from 'react-leaflet'
+-import { rupiah } from '../../utils/format'
+-import { IconChevronRight } from '../icons'
++import { jarak, menitAngkot, rupiah } from '../../utils/format'
++import { IconChevronRight, IconPlay } from '../icons'
+ import { nomor } from '../lib'
+ import TutupPopup from './TutupPopup'
+ 
+-// Kartu popup rute: nomor berwarna, jalur asal → tujuan, arah & tarif, tombol detail. Warna mengikuti garis rute.
+-export default function RutePopup({ posisi, rute, onDetail, onClose }) {
++// Kartu popup rute: nomor berwarna, asal → tujuan, arah, panjang/waktu/tarif, tombol detail (+ simulasi bila ada).
++export default function RutePopup({ posisi, rute, onDetail, onSimulasi, onClose }) {
+   if (!posisi || !rute) return null
+   const warna = rute.warna
++  const panjang = Number(rute.panjang_m) || null
++  const info = [
++    panjang && ['Panjang', jarak(panjang)],
++    panjang && ['Waktu', `±${menitAngkot(panjang)} mnt`],
++    ['Tarif', rupiah(rute.tarif)],
++  ].filter(Boolean)
+   return (
+     <Popup position={posisi} className="naik-popup" closeButton={false} autoPan autoPanPadding={[24, 90]} eventHandlers={{ remove: onClose }}>
+-      <div className="w-[264px] p-4">
++      <div className="w-[268px] p-4">
+         <div className="flex items-start gap-3">
+           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl font-display text-[17px] font-bold text-white" style={{ backgroundColor: warna }}>
+             {nomor(rute.kode_trayek)}
+           </span>
+           <div className="min-w-0 flex-1">
+-            <p className="text-[12px] font-semibold" style={{ color: warna }}>
+-              Rute {nomor(rute.kode_trayek)}
+-              {rute.arah ? ` · ${rute.arah}` : ''}
++            <p className="truncate text-[12px] font-semibold" style={{ color: warna }}>
++              {rute.arah || `Rute ${nomor(rute.kode_trayek)}`}
+             </p>
+             <p className="mt-0.5 text-[14.5px] leading-snug font-semibold text-dark">
+               {rute.asal} <span className="text-dark/40">→</span> {rute.tujuan}
+@@ -26,19 +31,35 @@ export default function RutePopup({ posisi, rute, onDetail, onClose }) {
+           </div>
+           <TutupPopup />
+         </div>
+-        <div className="mt-3 flex items-center justify-between rounded-xl bg-[#F4F7F7] px-3 py-2 text-[13px]">
+-          <span className="text-dark/60">Tarif</span>
+-          <span className="font-display font-bold text-dark">{rupiah(rute.tarif)}</span>
++        <dl className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-[#F4F7F7] px-2 py-2 text-center" style={{ gridTemplateColumns: `repeat(${info.length}, 1fr)` }}>
++          {info.map(([l, v]) => (
++            <div key={l}>
++              <dt className="text-[11px] text-dark/50">{l}</dt>
++              <dd className="font-display text-[13px] font-bold text-dark">{v}</dd>
++            </div>
++          ))}
++        </dl>
++        <div className="mt-3 flex gap-2">
++          {onSimulasi && (
++            <button
++              onClick={onSimulasi}
++              title="Simulasi angkot berjalan"
++              aria-label="Simulasi angkot berjalan"
++              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#E3E8EA] text-dark/70 transition hover:bg-[#F4F7F7]"
++            >
++              <IconPlay className="h-4 w-4" />
++            </button>
++          )}
++          {onDetail && (
++            <button
++              onClick={onDetail}
++              className="flex h-11 flex-1 items-center justify-center gap-1 rounded-xl text-[14px] font-semibold text-white transition hover:brightness-90"
++              style={{ backgroundColor: warna }}
++            >
++              Lihat detail rute <IconChevronRight className="h-4 w-4" />
++            </button>
++          )}
+         </div>
+-        {onDetail && (
+-          <button
+-            onClick={onDetail}
+-            className="mt-3 flex h-11 w-full items-center justify-center gap-1 rounded-xl text-[14px] font-semibold text-white transition hover:brightness-90"
+-            style={{ backgroundColor: warna }}
+-          >
+-            Lihat detail rute <IconChevronRight className="h-4 w-4" />
+-          </button>
+-        )}
+       </div>
+     </Popup>
+   )
+diff --git a/frontend/src/dashboard/dashboard.css b/frontend/src/dashboard/dashboard.css
+index 4160d1d..f6932a8 100644
+--- a/frontend/src/dashboard/dashboard.css
++++ b/frontend/src/dashboard/dashboard.css
+@@ -79,3 +79,89 @@
+     display: none;
+   }
+ }
++
++/* ---------- penanda simulasi (angkot / orang berjalan) ---------- */
++.naik-penanda.leaflet-marker-icon {
++  background: transparent !important;
++  border: none !important;
++}
++.naik-penanda-angkot,
++.naik-penanda-jalan {
++  position: relative;
++  width: 100%;
++  height: 100%;
++}
++.naik-penanda-denyut {
++  position: absolute;
++  inset: 2px;
++  border-radius: 9999px;
++  background: var(--w, #2563eb);
++  opacity: 0.3;
++  animation: naik-pulse 1.6s ease-out infinite;
++}
++.naik-penanda .naik-arah {
++  position: absolute;
++  inset: 0;
++  will-change: transform;
++}
++.naik-penanda .naik-arah i {
++  position: absolute;
++  left: 50%;
++  top: -8px;
++  width: 0;
++  height: 0;
++  margin-left: -7px;
++  border-left: 7px solid transparent;
++  border-right: 7px solid transparent;
++  border-bottom: 10px solid var(--w, #2563eb);
++  filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff) drop-shadow(0 1px 2px rgba(21, 30, 44, 0.35));
++}
++.naik-penanda-badan {
++  position: absolute;
++  inset: 5px;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  border-radius: 9999px;
++  background: #fff;
++  border: 3px solid var(--w);
++  color: var(--w);
++  box-shadow: 0 4px 12px rgba(21, 30, 44, 0.28);
++}
++.naik-penanda-badan svg {
++  width: 18px;
++  height: 18px;
++}
++.naik-penanda-angkot b {
++  position: absolute;
++  left: 50%;
++  bottom: -9px;
++  transform: translateX(-50%);
++  padding: 0 5px;
++  border-radius: 6px;
++  border: 1.5px solid #fff;
++  background: #151e2c;
++  color: #fff;
++  font: 800 10px/14px var(--font-sans, system-ui);
++  white-space: nowrap;
++}
++.naik-penanda-jalan {
++  --w: #2563eb;
++}
++.naik-penanda-jalan .naik-arah i {
++  top: -1px;
++  border-bottom-color: rgba(37, 99, 235, 0.85);
++}
++.naik-penanda-titik {
++  position: absolute;
++  inset: 10px;
++  border-radius: 9999px;
++  background: #2563eb;
++  border: 3px solid #fff;
++  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.45);
++}
++@media (prefers-reduced-motion: reduce) {
++  .naik-penanda-denyut {
++    animation: none;
++  }
++}
+diff --git a/frontend/src/dashboard/icons.jsx b/frontend/src/dashboard/icons.jsx
+index dcaf0fa..b7469dc 100644
+--- a/frontend/src/dashboard/icons.jsx
++++ b/frontend/src/dashboard/icons.jsx
+@@ -34,3 +34,14 @@ export const IconClock = I(<><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4
+ export const IconHome = I(<><path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" /></>)
+ export const IconCap = I(<><path d="M22 10 12 5 2 10l10 5 10-5Z" /><path d="M6 12v5c3 2 9 2 12 0v-5" /></>)
+ export const IconStar = I(<path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" />)
++export const IconWalk = I(<><circle cx="13" cy="4" r="1.5" /><path d="m7 21 3-4" /><path d="m16 21-2-4-3-3 1-6" /><path d="m6 12 2-3 4-1 3 3 3 1" /></>)
++export const IconTransfer = I(<><path d="M8 3 4 7l4 4" /><path d="M4 7h16" /><path d="m16 21 4-4-4-4" /><path d="M20 17H4" /></>)
++export const IconPlay = I(<path d="M7 4.5v15a.8.8 0 0 0 1.2.7l12-7.5a.8.8 0 0 0 0-1.4l-12-7.5A.8.8 0 0 0 7 4.5Z" fill="currentColor" />)
++export const IconPause = I(<><rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" /><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" /></>)
++export const IconVolume = I(<><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z" /><path d="M16 9a5 5 0 0 1 0 6" /><path d="M19.4 18.4a9 9 0 0 0 0-12.8" /></>)
++export const IconVolumeOff = I(<><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z" /><path d="m22 9-6 6M16 9l6 6" /></>)
++export const IconCrosshair = I(<><circle cx="12" cy="12" r="9" /><path d="M21 12h-3M6 12H3M12 6V3M12 21v-3" /><circle cx="12" cy="12" r="1.5" fill="currentColor" /></>)
++export const IconFlag = I(<><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><path d="M4 22v-7" /></>)
++export const IconRotate = I(<><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></>)
++export const IconArrowLeft = I(<path d="m12 19-7-7 7-7M19 12H5" />)
++export const IconList = I(<><path d="M8 6h13M8 12h13M8 18h13" /><circle cx="3.5" cy="6" r="1" fill="currentColor" /><circle cx="3.5" cy="12" r="1" fill="currentColor" /><circle cx="3.5" cy="18" r="1" fill="currentColor" /></>)
+diff --git a/frontend/src/dashboard/rute/AnimasiRute.jsx b/frontend/src/dashboard/rute/AnimasiRute.jsx
+index 0e17912..6f356e3 100644
+--- a/frontend/src/dashboard/rute/AnimasiRute.jsx
++++ b/frontend/src/dashboard/rute/AnimasiRute.jsx
+@@ -1,223 +1,80 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+ import { CircleMarker, Marker, Polyline, Popup, Tooltip, useMap, useMapEvents } from 'react-leaflet'
+ import L from 'leaflet'
+-import { rupiah } from '../../utils/format'
++import { esc, jarak, menitAngkot, rupiah } from '../../utils/format'
+ import { nomor } from '../lib'
+-import { IconBus } from '../icons'
++import { IconBus, IconCrosshair, IconPause, IconPlay, IconRotate, IconX } from '../icons'
++import { Lapisan } from '../ui'
++import { arahPada, buatLintasan, dekatiSudut, halus, ikonAngkot, ikutiKamera, putarPenanda, titikPada, useJam } from '../simulasi'
+ 
+-// Konversi koordinat GeoJSON (LineString / MultiLineString [lng, lat]) -> Leaflet [lat, lng]
+-export function ekstrakKoordinat(fitur) {
+-  if (!fitur?.geometry) return []
+-  const g = fitur.geometry
+-  let coords = []
+-  if (g.type === 'LineString') {
+-    coords = g.coordinates
+-  } else if (g.type === 'MultiLineString') {
+-    coords = g.coordinates.flat(1)
+-  }
+-  return coords.map(([lng, lat]) => [lat, lng])
+-}
+-
+-// Hitung jarak Haversine (meter) antara dua titik [lat, lng]
+-function hitungJarakM(p1, p2) {
+-  const R = 6371000
+-  const dLat = ((p2[0] - p1[0]) * Math.PI) / 180
+-  const dLng = ((p2[1] - p1[1]) * Math.PI) / 180
+-  const a =
+-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+-    Math.cos((p1[0] * Math.PI) / 180) * Math.cos((p2[0] * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+-}
++// Titik awal/tujuan, titik nama jalan, dan simulasi angkot berjalan di sepanjang rute terpilih.
+ 
+-// Hitung sudut rotasi arah jalan (bearing/azimuth 0 - 360 derajat)
+-function hitungBearing(p1, p2) {
+-  const lat1 = (p1[0] * Math.PI) / 180
+-  const lat2 = (p2[0] * Math.PI) / 180
+-  const dLng = ((p2[1] - p1[1]) * Math.PI) / 180
+-  const y = Math.sin(dLng) * Math.cos(lat2)
+-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(dLng)
+-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360
++function koordinat(fitur) {
++  const g = fitur?.geometry
++  if (!g) return []
++  const c = g.type === 'MultiLineString' ? g.coordinates.flat(1) : g.type === 'LineString' ? g.coordinates : []
++  return c.map(([lng, lat]) => [lat, lng])
+ }
+ 
+-// Marker custom HTML titik awal (Asal)
+-function buatIconAwal(label) {
++function ikonUjung(label, warna) {
+   return L.divIcon({
+-    className: 'naik-icon-awal',
+-    html: `
+-      <div style="display:flex; flex-direction:column; align-items:center; transform:translate(-50%, -100%); cursor:pointer;">
+-        <div style="background:#10B981; color:#fff; font-size:11px; font-weight:700; padding:3px 9px; border-radius:9999px; box-shadow:0 3px 10px rgba(16,185,129,0.35); border:2px solid #fff; white-space:nowrap; display:flex; align-items:center; gap:5px;">
+-          <span style="display:inline-block; width:6px; height:6px; background:#fff; border-radius:9999px;"></span>
+-          Awal: ${label || 'Asal'}
+-        </div>
+-        <div style="width:14px; height:14px; background:#10B981; border:3px solid #fff; border-radius:9999px; box-shadow:0 2px 6px rgba(0,0,0,0.3); margin-top:2px;"></div>
+-      </div>
+-    `,
++    className: 'naik-penanda',
+     iconSize: [0, 0],
+-  })
+-}
+-
+-// Marker custom HTML titik tujuan (Tujuan)
+-function buatIconTujuan(label) {
+-  return L.divIcon({
+-    className: 'naik-icon-tujuan',
+     html: `
+-      <div style="display:flex; flex-direction:column; align-items:center; transform:translate(-50%, -100%); cursor:pointer;">
+-        <div style="background:#EF4444; color:#fff; font-size:11px; font-weight:700; padding:3px 9px; border-radius:9999px; box-shadow:0 3px 10px rgba(239,68,68,0.35); border:2px solid #fff; white-space:nowrap; display:flex; align-items:center; gap:5px;">
+-          <span style="display:inline-block; width:6px; height:6px; background:#fff; border-radius:9999px;"></span>
+-          Tujuan: ${label || 'Tujuan'}
++      <div style="display:flex;flex-direction:column;align-items:center;transform:translate(-50%,-100%);cursor:pointer">
++        <div style="display:flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:9999px;background:#fff;color:#151E2C;font:600 11.5px/16px var(--font-sans,system-ui);white-space:nowrap;box-shadow:0 3px 12px rgba(21,30,44,.2)">
++          <span style="width:8px;height:8px;border-radius:9999px;background:${warna}"></span>${esc(label)}
+         </div>
+-        <div style="width:14px; height:14px; background:#EF4444; border:3px solid #fff; border-radius:9999px; box-shadow:0 2px 6px rgba(0,0,0,0.3); margin-top:2px;"></div>
+-      </div>
+-    `,
+-    iconSize: [0, 0],
++        <div style="width:14px;height:14px;margin-top:3px;border-radius:9999px;background:${warna};border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>
++      </div>`,
+   })
+ }
+ 
+-// Marker icon angkot berjalan dengan aura berdenyut
+-function buatIconAngkot(kode, warna, rotasi) {
+-  return L.divIcon({
+-    className: 'naik-icon-angkot',
+-    html: `
+-      <div style="position:relative; width:44px; height:44px; display:flex; align-items:center; justify-content:center; transform:translate(-50%, -50%);">
+-        <div style="position:absolute; inset:-4px; border-radius:9999px; background:${warna || '#1A936F'}; opacity:0.35; animation:naik-pulse 1.4s ease-out infinite;"></div>
+-        <div style="width:38px; height:38px; border-radius:9999px; background:#fff; border:3px solid ${warna || '#1A936F'}; box-shadow:0 4px 14px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; transform:rotate(${rotasi}deg); transition:transform 0.15s ease;">
+-          <svg style="width:20px; height:20px; color:${warna || '#1A936F'};" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+-            <path d="M8 6v6M15 6v6M2 12h19.6" />
+-            <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3" />
+-            <circle cx="7" cy="18" r="2" />
+-            <path d="M9 18h5" />
+-            <circle cx="16" cy="18" r="2" />
+-          </svg>
+-        </div>
+-        <div style="position:absolute; bottom:-7px; background:#151E2C; color:#fff; font-size:10px; font-weight:800; padding:1px 6px; border-radius:6px; border:1.5px solid #fff; white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.25);">
+-          ${kode || 'Angkot'}
+-        </div>
+-      </div>
+-    `,
+-    iconSize: [0, 0],
+-  })
+-}
++const WARNA_AWAL = '#13A36F'
++const WARNA_AKHIR = '#C8432E'
+ 
+-export default function AnimasiRute({
+-  fitur,
+-  titikJalan,
+-  halte,
+-  titikAktif,
+-  simulasiAktif,
+-  onSelesaiSimulasi,
+-  onMulaiSimulasi,
+-}) {
++export default function AnimasiRute({ fitur, titikJalan, halte, titikAktif, simulasiAktif, onSelesaiSimulasi, onMulaiSimulasi }) {
+   const map = useMap()
+   const [zoom, setZoom] = useState(() => map.getZoom())
+   useMapEvents({ zoomend: () => setZoom(map.getZoom()) })
+   const p = fitur?.properties || {}
+   const warna = p.warna || '#1A936F'
+-  const kodeSingkat = nomor(p.kode_trayek)
+-
+-  // Ekstrak koordinat rute
+-  const coords = useMemo(() => ekstrakKoordinat(fitur), [fitur])
++  const kode = nomor(p.kode_trayek)
+ 
+-  // Hitung jarak kumulatif antar titik rute
+-  const { kumulatif, totalJarakM } = useMemo(() => {
+-    if (coords.length < 2) return { kumulatif: [0], totalJarakM: 0 }
+-    const dists = [0]
+-    let total = 0
+-    for (let i = 1; i < coords.length; i++) {
+-      const d = hitungJarakM(coords[i - 1], coords[i])
+-      total += d
+-      dists.push(total)
+-    }
+-    return { kumulatif: dists, totalJarakM: total }
+-  }, [coords])
++  const coords = useMemo(() => koordinat(fitur), [fitur])
++  const lin = useMemo(() => buatLintasan(coords), [coords])
+ 
+-  // Titik detail di jalannya: per jalan yang dilewati (nama dari backend), fallback titik berjarak teratur
++  // titik nama jalan (urutan dari backend); posisi jarak = titik rute terdekat
+   const checkpoints = useMemo(() => {
+-    if (coords.length < 2) return []
++    if (lin.pts.length < 2) return []
++    const jarakDari = (pos) => {
++      let best = 0
++      let bestD = Infinity
++      lin.pts.forEach((c, k) => {
++        const d = (c[0] - pos[0]) ** 2 + (c[1] - pos[1]) ** 2
++        if (d < bestD) {
++          bestD = d
++          best = k
++        }
++      })
++      return Math.round(lin.kum[best])
++    }
+     if (halte?.length > 2) {
+       const norm = (s) => String(s ?? '').trim().toLowerCase()
+       const peta = new Map((titikJalan ?? []).map((t) => [norm(t.nama), t]))
+-      const posisiJarak = (m) => {
+-        let k = 0
+-        while (k < kumulatif.length - 2 && kumulatif[k + 1] < m) k++
+-        const seg = kumulatif[k + 1] - kumulatif[k]
+-        const f = seg > 0 ? (m - kumulatif[k]) / seg : 0
+-        return [coords[k][0] + (coords[k + 1][0] - coords[k][0]) * f, coords[k][1] + (coords[k + 1][1] - coords[k][1]) * f]
+-      }
+       const n = halte.length
+       return halte.map((nama, i) => {
+         const t = peta.get(norm(nama))
+-        const pos = t ? [t.lat, t.lng] : posisiJarak((i / (n - 1)) * totalJarakM)
+-        let jarakM = Math.round((i / (n - 1)) * totalJarakM)
+-        if (t) {
+-          let best = 0
+-          let bestD = Infinity
+-          for (let k = 0; k < coords.length; k++) {
+-            const d = (coords[k][0] - pos[0]) ** 2 + (coords[k][1] - pos[1]) ** 2
+-            if (d < bestD) {
+-              bestD = d
+-              best = k
+-            }
+-          }
+-          jarakM = Math.round(kumulatif[best])
+-        }
+-        return {
+-          id: `hl-${i}`,
+-          idx: i,
+-          urutan: i + 1,
+-          ujung: i === 0 || i === n - 1,
+-          nama,
+-          posisi: i === 0 ? coords[0] : i === n - 1 ? coords[coords.length - 1] : pos,
+-          jarakM,
+-          estimasiMenit: Math.max(1, Math.round((jarakM / 1000) * 3)),
+-        }
+-      })
+-    }
+-    if (titikJalan?.length) {
+-      return titikJalan.map((t, i) => {
+-        const pos = [t.lat, t.lng]
+-        // jarak dari awal = jarak kumulatif ke titik rute terdekat
+-        let best = 0
+-        let bestD = Infinity
+-        for (let k = 0; k < coords.length; k++) {
+-          const d = (coords[k][0] - pos[0]) ** 2 + (coords[k][1] - pos[1]) ** 2
+-          if (d < bestD) {
+-            bestD = d
+-            best = k
+-          }
+-        }
+-        const jarakM = Math.round(kumulatif[best])
+-        return {
+-          id: `jl-${i}`,
+-          urutan: i + 1,
+-          nama: t.nama,
+-          posisi: pos,
+-          jarakM,
+-          estimasiMenit: Math.max(1, Math.round((jarakM / 1000) * 3)),
+-        }
++        const ujung = i === 0 || i === n - 1
++        const pos = i === 0 ? lin.pts[0] : i === n - 1 ? lin.pts.at(-1) : t ? [t.lat, t.lng] : titikPada(lin, (i / (n - 1)) * lin.total).pos
++        const jarakM = i === 0 ? 0 : i === n - 1 ? Math.round(lin.total) : t ? jarakDari(pos) : Math.round((i / (n - 1)) * lin.total)
++        return { id: `hl-${i}`, idx: i, urutan: i + 1, ujung, nama, posisi: pos, jarakM }
+       })
+     }
+-    if (coords.length <= 4 || totalJarakM < 300) return []
+-    const step = Math.max(350, totalJarakM / 12)
+-    const list = []
+-    let nextTarget = step
+-
+-    for (let i = 1; i < coords.length - 1; i++) {
+-      if (kumulatif[i] >= nextTarget && nextTarget < totalJarakM - 200) {
+-        list.push({
+-          id: `cp-${i}`,
+-          urutan: list.length + 1,
+-          nama: null,
+-          posisi: coords[i],
+-          jarakM: Math.round(kumulatif[i]),
+-          estimasiMenit: Math.max(1, Math.round((kumulatif[i] / 1000) * 3)),
+-        })
+-        nextTarget += step
+-      }
+-    }
+-    return list
+-  }, [coords, kumulatif, totalJarakM, titikJalan, halte])
++    return (titikJalan ?? []).map((t, i) => ({ id: `jl-${i}`, idx: i, urutan: i + 1, nama: t.nama, posisi: [t.lat, t.lng], jarakM: jarakDari([t.lat, t.lng]) }))
++  }, [lin, titikJalan, halte])
+ 
+-  // Klik nama di daftar "Jalur Rute" -> terbang ke titiknya & buka popup otomatis
++  // klik nama di daftar "Jalur Rute" -> terbang ke titiknya & buka popup
+   const refs = useRef({})
+   useEffect(() => {
+     if (!titikAktif) return
+@@ -231,377 +88,227 @@ export default function AnimasiRute({
+     return () => clearTimeout(t)
+   }, [titikAktif, checkpoints, map])
+ 
+-  // State simulasi animasi perjalanan
+-  const [isPlaying, setIsPlaying] = useState(false)
+-  const [progress, setProgress] = useState(0) // 0 to 1
+-  const [speed, setSpeed] = useState(1) // 1x, 2x, 4x
+-  const [ikutiKamera, setIkutiKamera] = useState(true)
+-  const [sudahTiba, setSudahTiba] = useState(false)
+-
+-  const animFrameRef = useRef(null)
+-  const lastTimeRef = useRef(null)
+-  const progressRef = useRef(0)
+-  const isPlayingRef = useRef(false)
+-  const ikutiKameraRef = useRef(true)
+-  const speedRef = useRef(1)
+-
+-  progressRef.current = progress
+-  isPlayingRef.current = isPlaying
+-  ikutiKameraRef.current = ikutiKamera
+-  speedRef.current = speed
+-
+-  const titikAwal = coords[0]
+-  const titikTujuan = coords[coords.length - 1]
+-
+-  // Hitung posisi dan rotasi angkot berdasarkan progress (0..1)
+-  const { posisiAngkot, rotasiAngkot, indeksSegmen } = useMemo(() => {
+-    if (coords.length < 2) return { posisiAngkot: coords[0] || null, rotasiAngkot: 0, indeksSegmen: 0 }
+-    const targetM = progress * totalJarakM
+-
+-    // Cari segmen garis tempat targetM berada
+-    let idx = 0
+-    while (idx < kumulatif.length - 1 && kumulatif[idx + 1] < targetM) {
+-      idx++
+-    }
+-    if (idx >= coords.length - 1) {
+-      const last = coords[coords.length - 1]
+-      const prev = coords[coords.length - 2]
+-      return { posisiAngkot: last, rotasiAngkot: hitungBearing(prev, last), indeksSegmen: coords.length - 1 }
+-    }
+-
+-    const p1 = coords[idx]
+-    const p2 = coords[idx + 1]
+-    const segDist = kumulatif[idx + 1] - kumulatif[idx]
+-    const frac = segDist > 0 ? (targetM - kumulatif[idx]) / segDist : 0
+-    const lat = p1[0] + (p2[0] - p1[0]) * frac
+-    const lng = p1[1] + (p2[1] - p1[1]) * frac
+-    const rot = hitungBearing(p1, p2)
+-
+-    return { posisiAngkot: [lat, lng], rotasiAngkot: rot, indeksSegmen: idx }
+-  }, [coords, kumulatif, totalJarakM, progress])
+-
+-  // Jejak lintasan yang sudah dilalui angkot (highlight polyline)
+-  const koordinatDilalui = useMemo(() => {
+-    if (!posisiAngkot || coords.length < 2) return []
+-    const slice = coords.slice(0, indeksSegmen + 1)
+-    slice.push(posisiAngkot)
+-    return slice
+-  }, [coords, indeksSegmen, posisiAngkot])
+-
+-  // Fungsi mulai simulasi (zoom in ke awal jalan sesuai permintaan user)
+-  const mulaiJalan = useCallback(() => {
+-    if (!titikAwal) return
+-    setIsPlaying(false)
+-    setSudahTiba(false)
+-    setProgress(0)
+-    progressRef.current = 0
+-
+-    // Zoom in mendekat ke titik awal agar detail jalannya terlihat jelas
+-    map.flyTo(titikAwal, 16.5, {
+-      duration: 1.2,
+-      easeLinearity: 0.25,
+-    })
+-
+-    // Mulai animasi setelah kamera zoom selesai
+-    const timer = setTimeout(() => {
+-      setIsPlaying(true)
+-      lastTimeRef.current = performance.now()
+-    }, 1300)
+-
+-    return () => clearTimeout(timer)
+-  }, [titikAwal, map])
+-
+-  // Pemicu otomatis ketika prop simulasiAktif berubah jadi true
+-  useEffect(() => {
+-    if (simulasiAktif) {
+-      mulaiJalan()
+-    } else {
+-      setIsPlaying(false)
+-      setProgress(0)
+-      setSudahTiba(false)
+-    }
+-  }, [simulasiAktif, mulaiJalan])
+-
+-  // Loop animasi requestAnimationFrame
+-  useEffect(() => {
+-    if (!isPlaying) {
+-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+-      return
+-    }
+-
+-    // Durasi dasar simulasi dari awal ke akhir (sekitar 24 detik untuk 1x speed)
+-    const baseDurationMs = 24000
+-
+-    const step = (time) => {
+-      if (!lastTimeRef.current) lastTimeRef.current = time
+-      const delta = time - lastTimeRef.current
+-      lastTimeRef.current = time
+-
+-      const deltaProgress = (delta / (baseDurationMs / speedRef.current))
+-      const nextProgress = Math.min(1, progressRef.current + deltaProgress)
+-      progressRef.current = nextProgress
+-      setProgress(nextProgress)
+-
+-      // Auto-pan kamera mengikuti posisi angkot jika fitur 'ikutiKamera' aktif
+-      if (ikutiKameraRef.current && posisiAngkot) {
+-        map.panTo(posisiAngkot, { animate: false })
+-      }
+-
+-      if (nextProgress >= 1) {
+-        setIsPlaying(false)
+-        setSudahTiba(true)
+-        // Zoom out setelah tiba untuk menampilkan kembali seluruh rute
+-        setTimeout(() => {
+-          if (coords.length > 0) {
+-            const b = L.latLngBounds(coords)
+-            map.flyToBounds(b, { padding: [60, 60], duration: 1.5 })
+-          }
+-        }, 1500)
+-      } else {
+-        animFrameRef.current = requestAnimationFrame(step)
+-      }
+-    }
+-
+-    lastTimeRef.current = performance.now()
+-    animFrameRef.current = requestAnimationFrame(step)
+-
+-    return () => {
+-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+-    }
+-  }, [isPlaying, map, coords, posisiAngkot])
+-
+-  if (!titikAwal || !titikTujuan) return null
+-
++  if (lin.pts.length < 2) return null
+   return (
+     <>
+-      {/* 1. Titik Awal (Asal) dengan Badge & Popup Info */}
+-      <Marker position={titikAwal} icon={buatIconAwal(p.asal)} ref={(m) => (refs.current.awal = m)}>
++      <Marker position={lin.pts[0]} icon={ikonUjung(p.asal || 'Awal', WARNA_AWAL)} ref={(m) => (refs.current.awal = m)}>
+         <Popup className="naik-popup">
+-          <div className="w-[260px] p-4 text-left">
+-            <div className="flex items-center gap-2">
+-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500 text-xs font-bold text-white shadow-sm">
+-                A
+-              </span>
+-              <div>
+-                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600">Titik Awal (Keberangkatan)</p>
+-                <p className="font-display text-[15px] font-bold text-dark">{p.asal}</p>
+-              </div>
+-            </div>
+-            <div className="mt-2.5 border-t border-slate-100 pt-2 text-[12px] text-dark/70">
+-              <p>Rute: <b>Trayek {kodeSingkat}</b> ({p.nama_trayek})</p>
+-              <p className="mt-0.5">Tujuan Akhir: {p.tujuan}</p>
+-            </div>
+-            <button
+-              onClick={() => {
+-                if (onMulaiSimulasi) onMulaiSimulasi()
+-                else mulaiJalan()
+-              }}
+-              className="mt-3 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-[12px] font-semibold text-white shadow transition hover:bg-emerald-700"
+-            >
+-              <IconBus className="h-4 w-4" /> Mulai Jalan dari Sini
+-            </button>
++          <div className="w-[248px] p-4">
++            <p className="text-[11px] font-semibold tracking-wide text-[#0E7C5A] uppercase">Titik awal</p>
++            <p className="font-display text-[15px] font-bold text-dark">{p.asal}</p>
++            <p className="mt-1 text-[12px] text-dark/60">
++              Angkot {kode} menuju {p.tujuan}
++            </p>
++            {onMulaiSimulasi && (
++              <button
++                onClick={onMulaiSimulasi}
++                className="mt-3 flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[12.5px] font-semibold text-white hover:brightness-95"
++                style={{ backgroundColor: warna }}
++              >
++                <IconPlay className="h-3.5 w-3.5" /> Simulasikan dari sini
++              </button>
++            )}
+           </div>
+         </Popup>
+       </Marker>
+-
+-      {/* 2. Titik Tujuan (Akhir) dengan Badge & Popup Info */}
+-      <Marker position={titikTujuan} icon={buatIconTujuan(p.tujuan)} ref={(m) => (refs.current.tujuan = m)}>
++      <Marker position={lin.pts.at(-1)} icon={ikonUjung(p.tujuan || 'Tujuan', WARNA_AKHIR)} ref={(m) => (refs.current.tujuan = m)}>
+         <Popup className="naik-popup">
+-          <div className="w-[260px] p-4 text-left">
+-            <div className="flex items-center gap-2">
+-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500 text-xs font-bold text-white shadow-sm">
+-                B
+-              </span>
+-              <div>
+-                <p className="text-[11px] font-bold uppercase tracking-wider text-rose-600">Titik Tujuan (Kedatangan)</p>
+-                <p className="font-display text-[15px] font-bold text-dark">{p.tujuan}</p>
+-              </div>
+-            </div>
+-            <div className="mt-2.5 border-t border-slate-100 pt-2 text-[12px] text-dark/70">
+-              <p>Total Jarak Rute: <b>{(totalJarakM / 1000).toFixed(1)} km</b></p>
+-              <p className="mt-0.5">Tarif Resmi: <b>{rupiah(p.tarif)}</b></p>
+-            </div>
++          <div className="w-[248px] p-4">
++            <p className="text-[11px] font-semibold tracking-wide text-[#B23A27] uppercase">Titik akhir</p>
++            <p className="font-display text-[15px] font-bold text-dark">{p.tujuan}</p>
++            <p className="mt-1 text-[12px] text-dark/60">
++              {jarak(lin.total)} dari {p.asal} · ±{menitAngkot(lin.total)} mnt · {rupiah(p.tarif)}
++            </p>
+           </div>
+         </Popup>
+       </Marker>
+ 
+-      {/* 3. Titik-titik detail di jalannya (Waypoints) dengan Popup & Tooltip Info */}
+-      {checkpoints.filter((cp) => !cp.ujung).map((cp) => (
+-        <CircleMarker
+-          ref={(m) => (refs.current[cp.id] = m)}
+-          key={cp.id}
+-          center={cp.posisi}
+-          radius={5.5}
+-          pathOptions={{
+-            color: '#ffffff',
+-            weight: 2,
+-            fillColor: warna,
+-            fillOpacity: 0.95,
+-          }}
+-        >
+-          <Tooltip
+-            key={`${cp.id}-${zoom >= 13}`}
+-            permanent={Boolean(cp.nama) && zoom >= 13}
+-            direction="right"
+-            offset={[8, 0]}
+-            className="naik-tag-jalan"
++      {checkpoints
++        .filter((cp) => !cp.ujung)
++        .map((cp) => (
++          <CircleMarker
++            ref={(m) => (refs.current[cp.id] = m)}
++            key={cp.id}
++            center={cp.posisi}
++            radius={5}
++            pathOptions={{ color: '#fff', weight: 2, fillColor: warna, fillOpacity: 1 }}
+           >
+-            <span className="text-[11px] font-semibold">
+-              {cp.nama ?? `Titik #${cp.urutan} • ${(cp.jarakM / 1000).toFixed(1)} km`}
+-            </span>
+-          </Tooltip>
+-          <Popup className="naik-popup">
+-            <div className="w-[250px] p-3 text-left">
+-              <div className="flex items-center gap-2">
+-                <span
+-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+-                  style={{ backgroundColor: warna }}
+-                >
+-                  {cp.urutan}
+-                </span>
+-                <p className="font-display text-[14px] font-bold leading-tight text-dark">{cp.nama ?? `Titik Jalur #${cp.urutan}`}</p>
++            {/* label nama jalan permanen hanya saat cukup dekat, supaya peta tidak penuh tulisan */}
++            <Tooltip key={`${cp.id}-${zoom >= 15}`} permanent={zoom >= 15} direction="right" offset={[8, 0]} className="naik-tag-jalan">
++              <span className="text-[11px] font-semibold">{cp.nama}</span>
++            </Tooltip>
++            <Popup className="naik-popup">
++              <div className="w-[230px] p-3.5">
++                <p className="font-display text-[14px] leading-tight font-bold text-dark">{cp.nama}</p>
++                <p className="mt-1 text-[12px] text-dark/60">
++                  {jarak(cp.jarakM)} dari {p.asal} · ±{menitAngkot(cp.jarakM)} mnt naik angkot {kode}
++                </p>
+               </div>
+-              <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-[12px] text-dark/75">
+-                <p>Jarak dari awal: <b>{(cp.jarakM / 1000).toFixed(2)} km</b></p>
+-                <p>Estimasi waktu angkot: <b>± {cp.estimasiMenit} menit</b></p>
+-                <p className="truncate text-dark/50">Jalur: {p.asal} → {p.tujuan}</p>
+-              </div>
+-            </div>
+-          </Popup>
+-        </CircleMarker>
+-      ))}
++            </Popup>
++          </CircleMarker>
++        ))}
+ 
+-      {/* 4. Lintasan Progress yang Menyala saat Angkot Melaju */}
+-      {simulasiAktif && koordinatDilalui.length > 1 && (
+-        <Polyline
+-          positions={koordinatDilalui}
+-          pathOptions={{
+-            color: '#FBBF24',
+-            weight: 7,
+-            opacity: 0.9,
+-            lineCap: 'round',
+-          }}
+-        />
+-      )}
++      {simulasiAktif && <SimulasiAngkot lin={lin} kode={kode} warna={warna} p={p} onTutup={onSelesaiSimulasi} />}
++    </>
++  )
++}
++
++// Angkot berjalan dari awal ke akhir rute. Lama animasi sebanding panjang rute (15–40 detik pada 1×).
++function SimulasiAngkot({ lin, kode, warna, p, onTutup }) {
++  const map = useMap()
++  const durasiMs = useMemo(() => Math.min(Math.max(menitAngkot(lin.total) * 1000, 15000), 40000), [lin])
++  const [jalan, setJalan] = useState(false)
++  const [kecepatan, setKecepatan] = useState(1)
++  const [ikuti, setIkuti] = useState(true)
++  const [tiba, setTiba] = useState(false)
++  const [info, setInfo] = useState({ waktu: 0, m: 0 })
++
++  const penanda = useRef(null)
++  const jejak = useRef(null)
++  const sudut = useRef(null)
++  const jejakTitik = useRef({ i: -1, arr: [] })
++  const uiTerakhir = useRef(0)
++  const ikutiRef = useRef(true)
++  useEffect(() => {
++    ikutiRef.current = ikuti
++  }, [ikuti])
++
++  const ikon = useMemo(() => ikonAngkot(kode, warna), [kode, warna])
++  const kosong = useMemo(() => [], [])
++  useMapEvents({ dragstart: () => setIkuti(false) })
++
++  const gambar = useCallback(
++    (waktu, dt) => {
++      const m = halus(waktu / durasiMs) * lin.total
++      const { pos, i } = titikPada(lin, m)
++      const mk = penanda.current
++      if (mk) {
++        mk.setLatLng(pos)
++        const target = arahPada(lin, m)
++        if (target != null) sudut.current = dt ? dekatiSudut(sudut.current, target, 1 - Math.exp(-dt / 140)) : target
++        putarPenanda(mk, sudut.current)
++      }
++      const s = jejakTitik.current
++      if (s.i !== i) s.arr = lin.pts.slice(0, i + 1).concat([pos])
++      else s.arr[s.arr.length - 1] = pos
++      s.i = i
++      jejak.current?.setLatLngs(s.arr)
++      if (ikutiRef.current && dt) ikutiKamera(map, pos, dt)
++      const kini = performance.now()
++      if (!dt || kini - uiTerakhir.current > 120) {
++        uiTerakhir.current = kini
++        setInfo({ waktu, m })
++      }
++    },
++    [lin, durasiMs, map],
++  )
+ 
+-      {/* 5. Marker Angkot Bergerak */}
+-      {simulasiAktif && posisiAngkot && (
+-        <Marker position={posisiAngkot} icon={buatIconAngkot(kodeSingkat, warna, rotasiAngkot)}>
+-          <Tooltip permanent direction="top" offset={[0, -26]}>
+-            <div className="flex items-center gap-1.5 px-0.5 font-sans text-[11px] font-bold text-dark">
+-              <span className="h-2 w-2 animate-ping rounded-full bg-emerald-500"></span>
+-              {sudahTiba ? 'Tiba di Tujuan!' : `Melintas: ${Math.round(progress * 100)}%`}
+-            </div>
+-          </Tooltip>
+-        </Marker>
+-      )}
++  const jam = useJam({
++    durasiMs,
++    jalan,
++    kecepatan,
++    onFrame: gambar,
++    onSelesai: () => {
++      setJalan(false)
++      setTiba(true)
++      setInfo({ waktu: durasiMs, m: lin.total })
++      setTimeout(() => map.flyToBounds(L.latLngBounds(lin.pts), { padding: [60, 60], duration: 1 }), 700)
++    },
++  })
+ 
+-      {/* 6. Floating Control Panel Simulasi Jalan (Play, Pause, Speed, Progress) */}
+-      {simulasiAktif && (
+-        <div className="fixed bottom-20 left-1/2 z-[1001] flex -translate-x-1/2 flex-col items-center gap-2 rounded-2xl border border-white/80 bg-white/95 px-4 py-3 shadow-[0_12px_36px_rgba(21,30,44,0.2)] backdrop-blur-md sm:bottom-6 sm:px-6">
+-          <div className="flex w-full items-center justify-between gap-4 text-xs font-semibold text-dark">
+-            <div className="flex items-center gap-2">
+-              <span
+-                className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+-                style={{ backgroundColor: warna }}
+-              >
+-                {kodeSingkat}
+-              </span>
+-              <span className="truncate max-w-[180px] sm:max-w-none">
+-                {sudahTiba ? '🎉 Perjalanan Selesai' : `${p.asal} → ${p.tujuan}`}
+-              </span>
+-            </div>
+-            <span className="font-mono text-emerald-600">
+-              {((progress * totalJarakM) / 1000).toFixed(1)} / {(totalJarakM / 1000).toFixed(1)} km
+-            </span>
+-          </div>
++  // mulai: kamera ke titik awal dulu, baru angkot bergerak
++  const mulai = useCallback(() => {
++    jam.setWaktu(0)
++    setTiba(false)
++    setIkuti(true)
++    setJalan(false)
++    map.flyTo(lin.pts[0], Math.max(map.getZoom(), 16), { duration: 0.9 })
++    return setTimeout(() => setJalan(true), 950)
++  }, [jam, map, lin])
+ 
+-          {/* Progress Slider */}
+-          <div className="w-full">
+-            <input
+-              type="range"
+-              min="0"
+-              max="1"
+-              step="0.001"
+-              value={progress}
+-              onChange={(e) => {
+-                const val = parseFloat(e.target.value)
+-                setProgress(val)
+-                progressRef.current = val
+-                setSudahTiba(val >= 1)
+-              }}
+-              className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-slate-200 accent-emerald-600"
+-            />
++  useEffect(() => {
++    const t = mulai()
++    return () => clearTimeout(t)
++  }, [mulai])
++
++  const persen = (info.waktu / durasiMs) * 100
++
++  return (
++    <>
++      <Polyline ref={jejak} positions={kosong} pathOptions={{ color: '#151E2C', weight: 7, opacity: 0.35, lineCap: 'round', lineJoin: 'round' }} interactive={false} />
++      <Marker ref={penanda} position={lin.pts[0]} icon={ikon} zIndexOffset={1000} interactive={false} />
++
++      <Lapisan className="fixed bottom-24 left-1/2 z-[1001] w-[min(440px,calc(100%-24px))] -translate-x-1/2 rounded-2xl bg-white p-3.5 shadow-[0_12px_36px_rgba(21,30,44,0.22)] ring-1 ring-black/5 lg:bottom-5">
++        <div className="flex items-center gap-2.5">
++          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white" style={{ backgroundColor: warna }}>
++            <IconBus className="h-4.5 w-4.5" />
++          </span>
++          <div className="min-w-0 flex-1">
++            <p className="truncate text-[13px] font-semibold text-dark">{tiba ? `Sampai di ${p.tujuan}` : `${p.asal} → ${p.tujuan}`}</p>
++            <p className="text-[11.5px] text-dark/55">
++              <span className="mr-1.5 rounded bg-[#EEF3F3] px-1.5 py-px text-[10px] font-bold tracking-wide text-dark/60 uppercase">Simulasi</span>
++              {jarak(info.m)} / {jarak(lin.total)} · sisa ±{menitAngkot(Math.max(0, lin.total - info.m))} mnt
++            </p>
+           </div>
++          <TombolKecil onClick={onTutup} label="Tutup simulasi">
++            <IconX className="h-4 w-4" />
++          </TombolKecil>
++        </div>
+ 
+-          {/* Kontrol Tombol */}
+-          <div className="flex items-center justify-center gap-2">
+-            {/* Play / Pause / Replay */}
+-            {sudahTiba ? (
+-              <button
+-                onClick={mulaiJalan}
+-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 text-xs font-semibold text-white shadow transition hover:bg-emerald-700"
+-              >
+-                Ulangi
+-              </button>
+-            ) : isPlaying ? (
+-              <button
+-                onClick={() => setIsPlaying(false)}
+-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-amber-500 px-3.5 text-xs font-semibold text-white shadow transition hover:bg-amber-600"
+-              >
+-                Jeda
+-              </button>
+-            ) : (
+-              <button
+-                onClick={() => {
+-                  lastTimeRef.current = performance.now()
+-                  setIsPlaying(true)
+-                }}
+-                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 text-xs font-semibold text-white shadow transition hover:bg-emerald-700"
+-              >
+-                Lanjutkan
+-              </button>
+-            )}
++        <input
++          type="range"
++          min="0"
++          max="1000"
++          value={Math.round(persen * 10)}
++          onChange={(e) => {
++            jam.setWaktu((Number(e.target.value) / 1000) * durasiMs)
++            setTiba(false)
++          }}
++          aria-label="Posisi simulasi"
++          className="mt-3 h-1.5 w-full cursor-pointer appearance-none rounded-full"
++          style={{ background: `linear-gradient(to right, ${warna} ${persen}%, #E5EBEB ${persen}%)`, accentColor: warna }}
++        />
+ 
+-            {/* Kecepatan (1x, 2x, 4x) */}
+-            <button
+-              onClick={() => {
+-                const nextSpeed = speed === 1 ? 2 : speed === 2 ? 4 : 1
+-                setSpeed(nextSpeed)
+-              }}
+-              className="inline-flex h-9 items-center rounded-xl border border-slate-200 bg-slate-50 px-2.5 text-xs font-bold text-dark hover:bg-slate-100"
+-              title="Kecepatan simulasi"
+-            >
+-              {speed}x
++        <div className="mt-2.5 flex items-center gap-1.5">
++          {tiba ? (
++            <button onClick={mulai} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[12.5px] font-semibold text-white hover:bg-[#178563]">
++              <IconRotate className="h-4 w-4" /> Ulangi
+             </button>
+-
+-            {/* Toggle Ikuti Kamera */}
++          ) : (
+             <button
+-              onClick={() => setIkutiKamera(!ikutiKamera)}
+-              className={`inline-flex h-9 items-center gap-1 rounded-xl border px-2.5 text-xs font-medium transition ${
+-                ikutiKamera
+-                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+-                  : 'border-slate-200 bg-slate-50 text-slate-500'
+-              }`}
+-              title="Kamera otomatis mengikuti angkot"
++              onClick={() => setJalan((j) => !j)}
++              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-[12.5px] font-semibold text-white hover:bg-[#178563]"
+             >
+-              Ikuti Kamera
++              {jalan ? <IconPause className="h-4 w-4" /> : <IconPlay className="h-4 w-4" />} {jalan ? 'Jeda' : 'Lanjut'}
+             </button>
+-
+-            {/* Tutup Simulasi */}
+-            {onSelesaiSimulasi && (
+-              <button
+-                onClick={onSelesaiSimulasi}
+-                className="inline-flex h-9 items-center rounded-xl border border-slate-200 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+-                title="Tutup simulasi"
+-              >
+-                Tutup
+-              </button>
+-            )}
+-          </div>
++          )}
++          <button
++            onClick={() => setKecepatan((k) => (k === 1 ? 2 : k === 2 ? 4 : 1))}
++            className="inline-flex h-9 min-w-11 items-center justify-center rounded-xl border border-[#E3E8EA] px-2.5 text-[12.5px] font-bold text-dark/75 hover:bg-[#F4F7F7]"
++            title="Kecepatan simulasi"
++          >
++            {kecepatan}×
++          </button>
++          <button
++            onClick={() => {
++              setIkuti(true)
++              map.panTo(titikPada(lin, info.m).pos)
++            }}
++            aria-pressed={ikuti}
++            className={`ml-auto inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-[12px] font-semibold transition ${ikuti ? 'border-primary/40 bg-primary/8 text-primary' : 'border-[#E3E8EA] text-dark/60 hover:bg-[#F4F7F7]'}`}
++          >
++            <IconCrosshair className="h-4 w-4" /> Ikuti angkot
++          </button>
+         </div>
+-      )}
++      </Lapisan>
+     </>
+   )
+ }
+ 
++function TombolKecil({ onClick, label, children }) {
++  return (
++    <button onClick={onClick} title={label} aria-label={label} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-dark/50 hover:bg-[#F1F4F5]">
++      {children}
++    </button>
++  )
++}
+diff --git a/frontend/src/dashboard/rute/DetailRute.jsx b/frontend/src/dashboard/rute/DetailRute.jsx
+index 2340f8c..93f6bf6 100644
+--- a/frontend/src/dashboard/rute/DetailRute.jsx
++++ b/frontend/src/dashboard/rute/DetailRute.jsx
+@@ -1,10 +1,9 @@
+-import { rupiah } from '../../utils/format'
+-import { Card, CardHeader, Floating, KodeBadge, Muat, PrimaryButton } from '../ui'
+-import { IconBus, IconPin, IconSwap } from '../icons'
+-import PetaMini from './PetaMini'
++import { jarak, menitAngkot, rupiah } from '../../utils/format'
++import { Card, CardHeader, Floating, KodeBadge, Muat } from '../ui'
++import { IconPause, IconPin, IconPlay, IconSwap } from '../icons'
+ import JalurRute from './JalurRute'
+ 
+-// Panel Detail Rute (kanan): ringkasan, peta mini, arah, jalur, tombol Mulai Simulasi & Tampilkan di Peta.
++// Panel Detail Rute (kanan): ringkasan, arah, jalur, tombol simulasi & tampilkan di peta.
+ export default function DetailRute({
+   fitur,
+   detail,
+@@ -12,63 +11,83 @@ export default function DetailRute({
+   onBalik,
+   onTampilkan,
+   onMulaiSimulasi,
++  onHentikanSimulasi,
+   onPilihTitik,
+   simulasiAktif,
+   onClose,
+ }) {
+   const p = fitur.properties
+   const arah = detail.data?.rute.find((r) => r.rute_id === p.rute_id)
++  const panjang = Number(arah?.panjang_m ?? p.panjang_m) || null
++  const ringkas = [
++    ['Panjang', panjang ? jarak(panjang) : '-'],
++    ['Waktu', panjang ? `±${menitAngkot(panjang)} mnt` : '-'],
++    ['Tarif', rupiah(p.tarif ?? detail.data?.tarif)],
++  ]
+   return (
+-    <Floating className="right-3.5 bottom-24 left-3.5 flex max-h-[48%] flex-col lg:top-3 lg:bottom-auto lg:left-auto lg:max-h-[calc(100%-250px)] lg:w-[372px]">
++    <Floating className="right-3.5 bottom-24 left-3.5 flex max-h-[48%] flex-col lg:top-3 lg:bottom-auto lg:left-auto lg:max-h-[calc(100%-24px)] lg:w-[372px]">
+       <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+         <CardHeader title="Detail Rute" onClose={onClose} />
+-        <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-4 lg:px-6">
++        <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-4 lg:px-6">
+           <div className="flex items-center gap-3">
+             <KodeBadge kode={p.kode_trayek} warna={p.warna} size="lg" />
+             <div className="min-w-0">
+-              <p className="font-display text-[17px] leading-snug font-bold text-dark">
++              <p className="font-display text-[16.5px] leading-snug font-bold text-dark">
+                 {p.asal} → {p.tujuan}
+               </p>
+-              <p className="text-[13px] text-dark/60">Tarif: {rupiah(p.tarif)}</p>
++              {p.arah && <p className="truncate text-[12.5px] text-dark/55">{p.arah}</p>}
+             </div>
+           </div>
+ 
+-          <PetaMini fitur={fitur} />
++          <dl className="mt-3.5 grid grid-cols-3 gap-1 rounded-2xl bg-[#F6F9F9] px-2 py-2.5 text-center">
++            {ringkas.map(([l, v]) => (
++              <div key={l}>
++                <dt className="text-[11px] text-dark/50">{l}</dt>
++                <dd className="mt-0.5 text-[13.5px] font-bold text-dark">{v}</dd>
++              </div>
++            ))}
++          </dl>
+ 
+           {bisaBalik && (
+             <button
+               onClick={onBalik}
+               className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#E3E8EA] px-3 py-1.5 text-[13px] font-semibold text-dark/70 hover:bg-[#F6F9F9]"
+             >
+-              <IconSwap className="h-4 w-4" /> Arah sebaliknya
++              <IconSwap className="h-4 w-4" /> Lihat arah sebaliknya
+             </button>
+           )}
+ 
+-          <p className="mt-5 text-[14px] font-semibold text-tentang-dark">Jalur Rute</p>
++          <p className="mt-5 text-[14px] font-semibold text-tentang-dark">Jalur yang dilewati</p>
++          <p className="text-[12px] text-dark/50">Klik nama jalan untuk melihatnya di peta.</p>
+           <Muat loading={detail.loading} error={detail.error} />
+-          {arah && <JalurRute halte={arah.halte} onPilih={onPilihTitik} />}
++          {arah && <JalurRute halte={arah.halte} warna={p.warna} onPilih={onPilihTitik} />}
+           {arah?.urutan_jalan?.length > 0 && (
+             <details className="mt-4 rounded-2xl bg-[#F6F9F9] px-4 py-3 text-[13px]">
+-              <summary className="cursor-pointer font-semibold text-dark/80">Jalan yang dilewati ({arah.urutan_jalan.length})</summary>
++              <summary className="cursor-pointer font-semibold text-dark/80">Semua ruas jalan ({arah.urutan_jalan.length})</summary>
+               <p className="mt-2 leading-relaxed text-dark/70">{arah.urutan_jalan.join(' → ')}</p>
+             </details>
+           )}
+         </div>
+-        <div className="shrink-0 border-t border-[#EDF1F2] bg-white/95 px-5 pt-2.5 pb-5 backdrop-blur lg:px-6">
++        <div className="flex shrink-0 gap-2 border-t border-[#EDF1F2] bg-white px-5 pt-3 pb-4 lg:px-6">
+           <button
+-            onClick={onMulaiSimulasi}
+-            className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-md transition active:scale-[0.98] ${
++            onClick={simulasiAktif ? onHentikanSimulasi : onMulaiSimulasi}
++            className={`inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl text-[14.5px] font-semibold transition active:scale-[0.98] ${
+               simulasiAktif
+-                ? 'bg-amber-500 hover:bg-amber-600'
+-                : 'bg-[#09B58D] hover:bg-[#079977]'
++                ? 'border border-[#E3E8EA] bg-white text-dark/75 hover:bg-[#F6F9F9]'
++                : 'bg-primary text-white shadow-[0_6px_16px_rgba(26,147,111,0.25)] hover:bg-[#178563]'
+             }`}
+           >
+-            <IconBus className="h-5 w-5" />
+-            {simulasiAktif ? 'Sedang Simulasi Jalan...' : 'Mulai Simulasi Jalan'}
++            {simulasiAktif ? <IconPause className="h-4 w-4" /> : <IconPlay className="h-4 w-4" />}
++            {simulasiAktif ? 'Hentikan simulasi' : 'Simulasi angkot jalan'}
++          </button>
++          <button
++            onClick={onTampilkan}
++            title="Tampilkan seluruh rute di peta"
++            aria-label="Tampilkan seluruh rute di peta"
++            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#E3E8EA] text-dark/70 transition hover:bg-[#F6F9F9]"
++          >
++            <IconPin className="h-5 w-5" />
+           </button>
+-          <PrimaryButton onClick={onTampilkan}>
+-            <IconPin className="h-5 w-5" /> Tampilkan di Peta
+-          </PrimaryButton>
+         </div>
+       </Card>
+     </Floating>
+diff --git a/frontend/src/dashboard/rute/JalurRute.jsx b/frontend/src/dashboard/rute/JalurRute.jsx
+index 3811846..73b2a08 100644
+--- a/frontend/src/dashboard/rute/JalurRute.jsx
++++ b/frontend/src/dashboard/rute/JalurRute.jsx
+@@ -1,20 +1,23 @@
+-// Timeline "Jalur Rute" (urutan halte/jalan). Klik satu nama -> peta terbang ke titiknya & popup terbuka.
+-export default function JalurRute({ halte, onPilih }) {
++// Timeline "Jalur yang dilewati" (urutan jalan). Klik satu nama -> peta terbang ke titiknya & popup terbuka.
++export default function JalurRute({ halte, warna = '#1A936F', onPilih }) {
+   return (
+-    <ol className="mt-3">
++    <ol className="mt-2.5">
+       {halte.map((h, i) => {
+         const ujung = i === 0 || i === halte.length - 1
+         return (
+-          <li key={i} className="relative pb-1 last:pb-0">
+-            {i < halte.length - 1 && <span className="absolute top-4 left-[6px] h-full w-0.5 bg-primary/70" />}
++          <li key={i} className="relative">
++            {i < halte.length - 1 && <span className="absolute top-[18px] left-[13px] h-full w-0.5" style={{ backgroundColor: warna, opacity: 0.55 }} />}
+             <button
+               type="button"
+               onClick={() => onPilih?.(i)}
+-              className="relative flex w-full cursor-pointer gap-3 rounded-lg py-1.5 text-left transition hover:bg-[#F3F6F6]"
++              className="relative flex w-full cursor-pointer items-center gap-3 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-[#F3F6F6]"
+               title="Lihat di peta"
+             >
+-              <span className={`relative mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-[3px] border-primary ${ujung ? 'bg-primary' : 'bg-white'}`} />
+-              <span className="text-[14px] text-dark">{h}</span>
++              <span
++                className="relative h-3.5 w-3.5 shrink-0 rounded-full border-[3px]"
++                style={{ borderColor: warna, backgroundColor: ujung ? warna : '#fff' }}
++              />
++              <span className={`text-[13.5px] ${ujung ? 'font-semibold text-dark' : 'text-dark/85'}`}>{h}</span>
+             </button>
+           </li>
+         )
+diff --git a/frontend/src/dashboard/rute/RutePanel.jsx b/frontend/src/dashboard/rute/RutePanel.jsx
+index b2ac7d3..7e30564 100644
+--- a/frontend/src/dashboard/rute/RutePanel.jsx
++++ b/frontend/src/dashboard/rute/RutePanel.jsx
+@@ -1,4 +1,4 @@
+-import { useEffect, useMemo, useState } from 'react'
++import { useCallback, useEffect, useMemo, useState } from 'react'
+ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+ import { useMap } from 'react-leaflet'
+ import { api } from '../../api/naik'
+@@ -6,7 +6,7 @@ import useApi from '../../hooks/useApi'
+ import { useDashboard } from '../context'
+ import { Floating } from '../ui'
+ import { IconRoute } from '../icons'
+-import { batas, layarBesar, nomor, titikTengah } from '../lib'
++import { batas, layarBesar, nomor } from '../lib'
+ import RutePopup from '../components/RutePopup'
+ import DaftarRute from './DaftarRute'
+ import DetailRute from './DetailRute'
+@@ -63,14 +63,23 @@ export default function RutePanel() {
+     if (kodePenuh && !layarBesar()) setDaftarBuka(false) // di HP daftar ditutup supaya peta kelihatan
+   }, [kodePenuh, search])
+ 
+-  // zoom ke rute terpilih (+ popup di layar besar)
+-  useEffect(() => {
+-    if (!dipilih) return setPopup(null)
++  // zoom ke rute terpilih. Popup tidak dibuka otomatis: info yang sama sudah ada di panel Detail Rute,
++  // popup cuma muncul kalau garis rute diklik.
++  const paskan = useCallback(() => {
++    if (!dipilih) return
+     const b = batas(dipilih)
+     if (b.isValid())
+-      map.fitBounds(b, layarBesar() ? { paddingTopLeft: [440, 40], paddingBottomRight: [420, 120] } : { paddingTopLeft: [20, 80], paddingBottomRight: [20, Math.round(window.innerHeight * 0.55)] })
+-    setPopup({ posisi: titikTengah(dipilih), props: dipilih.properties })
++      map.flyToBounds(
++        b,
++        layarBesar()
++          ? { paddingTopLeft: [440, 40], paddingBottomRight: [420, 60], duration: 0.6 }
++          : { paddingTopLeft: [20, 80], paddingBottomRight: [20, Math.round(window.innerHeight * 0.52)], duration: 0.6 },
++      )
+   }, [dipilih, map])
++  useEffect(() => {
++    setPopup(null)
++    paskan()
++  }, [paskan])
+ 
+   function bukaDetail(p) {
+     if (p.kode_trayek === kodePenuh) {
+@@ -108,17 +117,24 @@ export default function RutePanel() {
+           onBalik={() => setRuteId(lainnya[0].properties.rute_id)}
+           onClose={() => setDetailBuka(false)}
+           simulasiAktif={simulasiAktif}
+-          onMulaiSimulasi={() => setSimulasiAktif(true)}
++          onMulaiSimulasi={() => {
++            setPopup(null)
++            setSimulasiAktif(true)
++            if (!layarBesar()) setDetailBuka(false) // HP: panel detail menutupi angkot yang diikuti kamera
++          }}
++          onHentikanSimulasi={() => {
++            setSimulasiAktif(false)
++            paskan()
++          }}
+           onPilihTitik={(idx) => setTitikAktif({ idx, n: Date.now() })}
+           onTampilkan={() => {
+-            const b = batas(dipilih)
+-            if (b.isValid()) map.flyToBounds(b, { padding: [60, 60] })
+-            setPopup({ posisi: titikTengah(dipilih), props: dipilih.properties })
++            setSimulasiAktif(false)
++            paskan()
+           }}
+         />
+       )}
+ 
+-      {dipilih && <ChipRute rute={dipilih.properties} />}
++      {dipilih && !simulasiAktif && <ChipRute rute={dipilih.properties} />}
+ 
+       <LayerRuteTerpilih
+         semua={!kodePenuh ? rute.data : null}
+@@ -129,11 +145,35 @@ export default function RutePanel() {
+         titikAktif={titikAktif}
+         onKlik={(posisi, props) => setPopup({ posisi, props })}
+         simulasiAktif={simulasiAktif}
+-        onMulaiSimulasi={() => setSimulasiAktif(true)}
+-        onSelesaiSimulasi={() => setSimulasiAktif(false)}
++        onMulaiSimulasi={() => {
++          setPopup(null)
++          setSimulasiAktif(true)
++        }}
++        onSelesaiSimulasi={() => {
++          setSimulasiAktif(false)
++          setDetailBuka(true)
++          paskan()
++        }}
+       />
+ 
+-      <RutePopup posisi={popup?.posisi} rute={popup?.props} onClose={() => setPopup(null)} onDetail={() => bukaDetail(popup.props)} />
++      <RutePopup
++        posisi={popup?.posisi}
++        rute={popup?.props}
++        onClose={() => setPopup(null)}
++        onDetail={() => {
++          bukaDetail(popup.props)
++          setPopup(null)
++        }}
++        onSimulasi={
++          popup?.props.kode_trayek === kodePenuh
++            ? () => {
++                setRuteId(popup.props.rute_id)
++                setPopup(null)
++                setSimulasiAktif(true)
++              }
++            : undefined
++        }
++      />
+     </>
+   )
+ }
+diff --git a/frontend/src/dashboard/simulasi.js b/frontend/src/dashboard/simulasi.js
+new file mode 100644
+index 0000000..072c406
+--- /dev/null
++++ b/frontend/src/dashboard/simulasi.js
+@@ -0,0 +1,170 @@
++import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
++import L from 'leaflet'
++
++// Mesin animasi simulasi perjalanan (dipakai menu Rute & menu Cari).
++// Posisi penanda, jejak, dan kamera diperbarui langsung lewat Leaflet setiap frame (requestAnimationFrame),
++// tanpa render ulang React, jadi gerakannya mulus. React hanya diberi kabar ±8x per detik untuk teks/progres.
++
++const RAD = Math.PI / 180
++
++/** jarak meter antara [lat,lng] a dan b */
++export function jarakM(a, b) {
++  const dLat = (b[0] - a[0]) * RAD
++  const dLng = (b[1] - a[1]) * RAD
++  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * RAD) * Math.cos(b[0] * RAD) * Math.sin(dLng / 2) ** 2
++  return 12742000 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h))
++}
++
++/** arah (derajat dari utara) dari a ke b */
++export function arahDerajat(a, b) {
++  const y = Math.sin((b[1] - a[1]) * RAD) * Math.cos(b[0] * RAD)
++  const x = Math.cos(a[0] * RAD) * Math.sin(b[0] * RAD) - Math.sin(a[0] * RAD) * Math.cos(b[0] * RAD) * Math.cos((b[1] - a[1]) * RAD)
++  return (Math.atan2(y, x) / RAD + 360) % 360
++}
++
++/** lintasan siap animasi: titik [lat,lng] + jarak kumulatif */
++export function buatLintasan(titik) {
++  const pts = []
++  for (const p of titik) {
++    if (!pts.length || jarakM(pts[pts.length - 1], p) > 0.3) pts.push(p)
++  }
++  const kum = [0]
++  for (let i = 1; i < pts.length; i++) kum.push(kum[i - 1] + jarakM(pts[i - 1], pts[i]))
++  return { pts, kum, total: kum[kum.length - 1] ?? 0 }
++}
++
++/** posisi pada jarak m dari awal lintasan -> { pos, i } (i = indeks titik sebelum posisi) */
++export function titikPada(lin, m) {
++  const { pts, kum, total } = lin
++  if (pts.length < 2) return { pos: pts[0] ?? [0, 0], i: 0 }
++  const d = Math.min(Math.max(m, 0), total)
++  let lo = 0
++  let hi = kum.length - 1
++  while (hi - lo > 1) {
++    const mid = (lo + hi) >> 1
++    if (kum[mid] <= d) lo = mid
++    else hi = mid
++  }
++  const seg = kum[hi] - kum[lo]
++  const f = seg > 0 ? (d - kum[lo]) / seg : 0
++  return { pos: [pts[lo][0] + (pts[hi][0] - pts[lo][0]) * f, pts[lo][1] + (pts[hi][1] - pts[lo][1]) * f], i: lo }
++}
++
++/** arah halus: lihat sedikit ke depan supaya tidak goyang di tikungan rapat */
++export function arahPada(lin, m) {
++  const a = titikPada(lin, m - 6).pos
++  const b = titikPada(lin, m + 22).pos
++  return jarakM(a, b) < 0.5 ? null : arahDerajat(a, b)
++}
++
++/** sudut bergerak pelan ke target lewat jalur terpendek */
++export function dekatiSudut(dari, ke, t) {
++  if (dari == null) return ke
++  const beda = ((ke - dari + 540) % 360) - 180
++  return (dari + beda * t + 360) % 360
++}
++
++/** kurva gas-rem angkot: pelan di awal & akhir */
++export const halus = (t) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(Math.max(t, 0), 1))
++
++/**
++ * Pengatur waktu animasi. onFrame(waktuMs, dtMs) dipanggil tiap frame selama `jalan`,
++ * onSelesai() saat waktu mencapai durasiMs. Kembalikan { waktu: ref, setWaktu }.
++ */
++export function useJam({ durasiMs, jalan, kecepatan = 1, onFrame, onSelesai }) {
++  const waktu = useRef(0)
++  const cb = useRef({ durasiMs })
++  useLayoutEffect(() => {
++    cb.current = { onFrame, onSelesai, kecepatan, durasiMs }
++  })
++
++  useEffect(() => {
++    if (!jalan) return
++    let id
++    let sebelum = performance.now()
++    const langkah = (kini) => {
++      const dt = Math.min(kini - sebelum, 64) // tab sempat tertidur -> jangan loncat jauh
++      sebelum = kini
++      const { durasiMs: D, kecepatan: k } = cb.current
++      waktu.current = Math.min(D, waktu.current + dt * k)
++      cb.current.onFrame?.(waktu.current, dt)
++      if (waktu.current >= D) cb.current.onSelesai?.()
++      else id = requestAnimationFrame(langkah)
++    }
++    id = requestAnimationFrame(langkah)
++    return () => cancelAnimationFrame(id)
++  }, [jalan])
++
++  const setWaktu = useCallback((ms) => {
++    waktu.current = Math.min(Math.max(ms, 0), cb.current.durasiMs)
++    cb.current.onFrame?.(waktu.current, 0)
++  }, [])
++
++  return useMemo(() => ({ waktu, setWaktu }), [setWaktu])
++}
++
++/**
++ * Kamera mengikuti penanda dengan lembut (bukan loncat tiap frame).
++ * Diam saat peta sedang di-zoom atau digeser pengguna.
++ */
++export function ikutiKamera(map, pos, dt, kekakuan = 220) {
++  if (!map || map._animatingZoom || map.dragging?._draggable?._moving) return
++  const c = map.getCenter()
++  const t = 1 - Math.exp(-dt / kekakuan)
++  const lat = c.lat + (pos[0] - c.lat) * t
++  const lng = c.lng + (pos[1] - c.lng) * t
++  map.setView([lat, lng], map.getZoom(), { animate: false, noMoveStart: true })
++}
++
++/** klik peta tetap terbaca walau mouse/jari sedikit bergeser (bawaan Leaflet 3px). Kembalikan fungsi pemulih. */
++export function aturToleransiKlik(map, px = 10) {
++  const d = map?.dragging?._draggable
++  if (!d) return () => {}
++  const lama = d.options.clickTolerance
++  d.options.clickTolerance = px
++  return () => {
++    d.options.clickTolerance = lama
++  }
++}
++
++/** putar bagian penunjuk arah di dalam ikon penanda */
++export function putarPenanda(marker, derajat) {
++  const el = marker?.getElement?.()?.querySelector('.naik-arah')
++  if (el && derajat != null) el.style.transform = `rotate(${derajat}deg)`
++}
++
++const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
++
++const SVG_BUS =
++  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6v6M15 6v6M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/></svg>'
++
++/** ikon angkot: badan tetap tegak, segitiga kecil di tepi lingkaran menunjuk arah jalan */
++export function ikonAngkot(kode, warna = '#1A936F') {
++  return L.divIcon({
++    className: 'naik-penanda',
++    iconSize: [44, 44],
++    iconAnchor: [22, 22],
++    html: `
++      <div class="naik-penanda-angkot" style="--w:${warna}">
++        <span class="naik-penanda-denyut"></span>
++        <span class="naik-arah"><i></i></span>
++        <span class="naik-penanda-badan">${SVG_BUS}</span>
++        <b>${esc(kode)}</b>
++      </div>`,
++  })
++}
++
++/** ikon orang berjalan: titik biru + kerucut arah */
++export function ikonJalan() {
++  return L.divIcon({
++    className: 'naik-penanda',
++    iconSize: [36, 36],
++    iconAnchor: [18, 18],
++    html: `
++      <div class="naik-penanda-jalan">
++        <span class="naik-penanda-denyut"></span>
++        <span class="naik-arah"><i></i></span>
++        <span class="naik-penanda-titik"></span>
++      </div>`,
++  })
++}
+diff --git a/frontend/src/dashboard/ui.jsx b/frontend/src/dashboard/ui.jsx
+index 021c389..a08e89a 100644
+--- a/frontend/src/dashboard/ui.jsx
++++ b/frontend/src/dashboard/ui.jsx
+@@ -17,6 +17,21 @@ export function Floating({ className = '', children, ...rest }) {
+   )
+ }
+ 
++// Lapisan bebas posisi (mis. `fixed`) di atas peta; klik/scroll di dalamnya tidak tembus ke peta.
++export function Lapisan({ className = '', children }) {
++  const ref = useRef(null)
++  useEffect(() => {
++    if (!ref.current) return
++    L.DomEvent.disableClickPropagation(ref.current)
++    L.DomEvent.disableScrollPropagation(ref.current)
++  }, [])
++  return (
++    <div ref={ref} className={`cursor-auto ${className}`}>
++      {children}
++    </div>
++  )
++}
++
+ export function Card({ className = '', children }) {
+   return (
+     <div className={`rounded-[28px] border border-white/70 bg-white/95 shadow-[0_8px_30px_rgba(21,30,44,0.12)] backdrop-blur ${className}`}>
+-- 
+2.43.0
+
