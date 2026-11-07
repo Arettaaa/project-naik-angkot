@@ -9,7 +9,7 @@ from qgis.utils import iface
 import processing
 
 # ---------- CONFIG ----------
-FOLDER     = r"D:\Kuliah\Semester 5\GIS\data_final"
+FOLDER     = r"D:\Kuliah\Semester 5\GIS\project_naik_angkot\data\final"
 KE_POSTGIS = True           # False kalau cuma mau lihat di QGIS
 CONN_NAME  = "NAIK ANGKOT"
 SCHEMA     = "public"
