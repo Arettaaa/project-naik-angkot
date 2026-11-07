@@ -13,7 +13,7 @@ export default function LandingPage() {
   useReveal(ref)
 
   return (
-    <main ref={ref} className="min-h-screen bg-[#E8F6FF] text-hero-brown">
+    <main ref={ref} id="top" className="min-h-screen bg-[#E8F6FF] text-hero-brown">
       <Navbar />
       <div className="mx-auto w-full max-w-[1920px] [container-type:inline-size]">
         <Hero />

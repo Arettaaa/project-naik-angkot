@@ -1,9 +1,8 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import adegan from '../assets/carakerja/adegan.svg'
 import jalur from '../assets/carakerja/jalur.svg'
 import kilau from '../assets/carakerja/kilau.svg'
 import langkah from '../data/langkah'
-import useScrollSteps from '../hooks/useScrollSteps'
 
 const JARAK_MUNCUL_PX = 40
 
@@ -101,23 +100,52 @@ function Sparkles() {
   )
 }
 
+// Kartu langkah muncul satu per satu (jeda 220 ms) begitu bagian ini terlihat. Tidak ada "scroll di tempat":
+// halaman tetap mengalir normal, jadi tidak terasa macet/ngelag.
+function useLangkahMuncul(ref, jumlah) {
+  const [n, setN] = useState(() => (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? jumlah : 0))
+  useEffect(() => {
+    const el = ref.current
+    if (!el || n >= jumlah) return
+    let timer
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e.isIntersecting) return
+        io.disconnect()
+        let i = 0
+        const lanjut = () => {
+          i += 1
+          setN(i)
+          if (i < jumlah) timer = setTimeout(lanjut, 220)
+        }
+        timer = setTimeout(lanjut, 150)
+      },
+      { threshold: 0.3 },
+    )
+    io.observe(el)
+    return () => {
+      io.disconnect()
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ref, jumlah])
+  return n
+}
+
 export default function CaraKerja() {
-  const wrapperRef = useRef(null)
   const sectionRef = useRef(null)
   const stepRefs = useRef([])
-  const { visibleCount, isResetting } = useScrollSteps(sectionRef, stepRefs, langkah.length, wrapperRef)
+  const visibleCount = useLangkahMuncul(sectionRef, langkah.length)
 
   return (
-    // Wrapper tinggi (desktop): ruang scroll untuk "scroll di tempat" - section di dalamnya ter-pin sampai 4 kartu muncul semua.
     <div
-      ref={wrapperRef}
       id="panduan"
-      className="relative z-10 -mt-[7.5694cqw] scroll-mt-[123px] lg:h-[calc(71cqw+240vh)] lg:scroll-mt-[8.5417cqw] min-[1920px]:-mt-[7.5694vw] min-[1920px]:left-1/2 min-[1920px]:h-[calc(71vw+240vh)] min-[1920px]:w-[calc(100vw-15px)] min-[1920px]:max-w-[2560px] min-[1920px]:-translate-x-1/2"
+      className="relative z-10 -mt-[7.5694cqw] scroll-mt-[96px] lg:scroll-mt-[2cqw] min-[1920px]:-mt-[7.5694vw] min-[1920px]:left-1/2 min-[1920px]:w-[calc(100vw-15px)] min-[1920px]:max-w-[2560px] min-[1920px]:-translate-x-1/2"
     >
     <section
       ref={sectionRef}
       aria-labelledby="cara-kerja-title"
-      className={`cara-kerja-section relative min-h-[calc(100vh+160px)] w-full overflow-x-clip pb-28 pt-36 max-lg:pt-32 lg:sticky lg:h-[71cqw] lg:min-h-0 lg:overflow-clip lg:pb-0 lg:pt-0 min-[1920px]:[container-type:inline-size] min-[1920px]:h-[71vw]${isResetting ? ' is-resetting' : ''}`}
+      className="cara-kerja-section relative w-full overflow-x-clip pb-28 pt-36 max-lg:pt-32 lg:h-[71cqw] lg:overflow-clip lg:pb-0 lg:pt-0 min-[1920px]:[container-type:inline-size] min-[1920px]:h-[71vw]"
     >
       <div
         className="pointer-events-none absolute inset-x-0 top-[53cqw] bottom-0 z-0 bg-guide-hill lg:hidden"
@@ -197,7 +225,7 @@ export default function CaraKerja() {
           id="cara-kerja-title"
           className="mt-5 text-center font-display text-[clamp(2.5rem,8vw,4rem)] font-bold leading-none text-[#0D404F] lg:absolute lg:left-[26.8403cqw] lg:top-[16.5278cqw] lg:mt-0 lg:w-[46.3194cqw] lg:text-[5cqw] lg:leading-[4.9396cqw] lg:font-optical-sizing-auto lg:tracking-[-0.03em]"
         >
-          Cara Kerja
+          Cara Pakai
         </h2>
 
         <ol className="relative z-10 mt-10 flex w-full flex-col items-center gap-12 px-4 lg:absolute lg:inset-0 lg:mt-0 lg:block lg:p-0">

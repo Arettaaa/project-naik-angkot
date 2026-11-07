@@ -5,7 +5,7 @@ import L from 'leaflet'
 import { useDashboard } from '../context'
 import { BottomSheet, Card, Floating } from '../ui'
 import { useLayarBesar } from '../hooks'
-import { IconChevronDown, IconChevronUp, IconLocate } from '../icons'
+import { IconChevronDown, IconChevronUp, IconX, IconLocate } from '../icons'
 import { batas, nomor } from '../lib'
 import RutePopup from '../components/RutePopup'
 import RuasPopup from '../components/RuasPopup'
@@ -35,6 +35,10 @@ export default function BerandaPanel() {
   const hapus = () => setFilter((f) => ({ ...f, kode: [] }))
   const pilihSemua = () => setFilter((f) => ({ ...f, kode: (trayek.data ?? []).map((t) => t.kode_trayek) }))
   const [infoTutup, setInfoTutup] = useState(false) // desktop: panel info kepadatan diciutkan
+  const [infoSembunyi, setInfoSembunyi] = useState(false) // desktop: panel info kepadatan ditutup (tinggal tombol kecil)
+  useEffect(() => {
+    if (layers.kepadatan) setInfoSembunyi(false) // tiap mode kepadatan dibuka lagi, panel info tampil
+  }, [layers.kepadatan])
 
   useEffect(() => {
     if (layers.jalan || layers.kepadatan) return butuhKepadatan()
@@ -112,17 +116,43 @@ export default function BerandaPanel() {
             </Card>
           </Floating>
           <Floating className="top-3 right-3">{tombolLayer}</Floating>
-          {layers.kepadatan && (
+          {layers.kepadatan && infoSembunyi && (
+            <Floating className="top-[76px] right-3">
+              <button
+                onClick={() => setInfoSembunyi(false)}
+                className="inline-flex h-11 items-center gap-2 rounded-full bg-white pr-4 pl-3.5 text-[13.5px] font-semibold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.14)] transition hover:bg-[#F6F9F9]"
+              >
+                <span className="flex gap-0.5" aria-hidden="true">
+                  {['#4FAE84', '#E3A03A', '#C8432E'].map((w) => (
+                    <span key={w} className="h-2.5 w-1.5 rounded-full" style={{ backgroundColor: w }} />
+                  ))}
+                </span>
+                Info kepadatan
+              </button>
+            </Floating>
+          )}
+          {layers.kepadatan && !infoSembunyi && (
             <Floating className="top-[76px] right-3 flex max-h-[calc(100%-292px)] w-[340px] flex-col">
-              <Card className="naik-scroll relative min-h-0 overflow-y-auto !rounded-[24px] px-5 py-4">
-                <button
-                  onClick={() => setInfoTutup((x) => !x)}
-                  aria-label={infoTutup ? 'Buka info kepadatan' : 'Ciutkan info kepadatan'}
-                  aria-expanded={!infoTutup}
-                  className="absolute top-3 right-3 z-[2] flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/55 transition hover:bg-mist hover:text-dark"
-                >
-                  {infoTutup ? <IconChevronDown className="h-4 w-4" /> : <IconChevronUp className="h-4 w-4" />}
-                </button>
+              <Card className="naik-scroll relative min-h-0 overflow-y-auto !rounded-[24px] px-5 py-4 select-none">
+                <div className="absolute top-3 right-3 z-[2] flex gap-1.5">
+                  <button
+                    onClick={() => setInfoTutup((x) => !x)}
+                    aria-label={infoTutup ? 'Perluas info kepadatan' : 'Ciutkan info kepadatan'}
+                    title={infoTutup ? 'Perluas' : 'Ciutkan'}
+                    aria-expanded={!infoTutup}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/55 transition hover:bg-mist hover:text-dark"
+                  >
+                    {infoTutup ? <IconChevronDown className="h-4 w-4" /> : <IconChevronUp className="h-4 w-4" />}
+                  </button>
+                  <button
+                    onClick={() => setInfoSembunyi(true)}
+                    aria-label="Tutup info kepadatan"
+                    title="Tutup"
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/55 transition hover:bg-mist hover:text-dark"
+                  >
+                    <IconX className="h-4 w-4" />
+                  </button>
+                </div>
                 {info({ ringkas: infoTutup })}
               </Card>
             </Floating>

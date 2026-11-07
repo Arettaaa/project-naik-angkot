@@ -55,7 +55,7 @@ function Pil({ tingkat, children }) {
 }
 
 const Judul = ({ eyebrow, children }) => (
-  <div className="pr-9">
+  <div className="pr-[76px]">
     <p className="text-[11px] font-semibold tracking-[0.08em] text-primary uppercase">{eyebrow}</p>
     <h2 className="mt-0.5 font-display text-[18px] leading-tight font-bold text-tentang-dark">{children}</h2>
   </div>

@@ -2,21 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import kartuTentangData from '../data/kartuTentang'
 
 const deskripsiPerBaris = {
-  'rute-presisi': [
-    'Temukan titik naik-turun dan',
-    'rute paling efisien tanpa takut',
-    'salah angkot.',
-  ],
-  'panduan-transit': [
-    'Informasi rute jauh lebih mudah',
-    'dipahami ketika ditampilkan',
-    'langsung pada peta.',
-  ],
-  'sulit-menentukan': [
-    'Pengguna butuh bantuan',
-    'menemukan rute berdasarkan',
-    'lokasi asal dan tujuan.',
-  ],
+  'rute-presisi': ['Lihat jalur setiap angkot', 'lengkap dengan nama jalan', 'yang dilewati.'],
+  'panduan-transit': ['Perlu ganti angkot? NAIK', 'menunjukkan tempat turun', 'dan angkot berikutnya.'],
+  'sulit-menentukan': ['Cukup isi asal dan tujuan.', 'Angkot tercepat beserta', 'tarifnya langsung muncul.'],
 }
 
 function CardIcon({ id }) {

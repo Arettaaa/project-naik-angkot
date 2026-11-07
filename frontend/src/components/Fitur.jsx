@@ -1,25 +1,16 @@
 import { lazy, Suspense, useRef, useState } from 'react'
-import 'leaflet/dist/leaflet.css'
-import demoRute from '../data/demoRute'
 
 const PetaFitur = lazy(() => import('./fitur/PetaFitur'))
 
 const TABS = [
   { id: 'kepadatan', label: 'Peta Kepadatan' },
-  { id: 'eksplorasi', label: 'Eksplorasi Rute' },
-  { id: 'filter', label: 'Filter & Pop-up' },
-  { id: 'tarif', label: 'Rekomendasi & Tarif' },
+  { id: 'rute', label: 'Jelajahi Rute' },
+  { id: 'cari', label: 'Cari Rute & Tarif' },
+  { id: 'simulasi', label: 'Simulasi Perjalanan' },
 ]
 
-export default function Fitur({ data = demoRute }) {
+export default function Fitur() {
   const [activeTab, setActiveTab] = useState(TABS[0].id)
-  const [selectedRoute, setSelectedRoute] = useState(data.trayek[0].id)
-  const [visibleDensity, setVisibleDensity] = useState(() =>
-    Object.fromEntries(data.ruasPadat.map((road) => [road.id, true])),
-  )
-  const [visibleRoutes, setVisibleRoutes] = useState(() =>
-    Object.fromEntries(data.trayek.map((route) => [route.id, true])),
-  )
   const tabRefs = useRef([])
   const activeIndex = TABS.findIndex((tab) => tab.id === activeTab)
 
@@ -48,32 +39,23 @@ export default function Fitur({ data = demoRute }) {
     }
   }
 
-  const toggleDensity = (id) => {
-    setVisibleDensity((current) => ({ ...current, [id]: !current[id] }))
-  }
-
-  const toggleRoute = (id) => {
-    setVisibleRoutes((current) => ({ ...current, [id]: !current[id] }))
-  }
-
   return (
     <section
       id="fitur"
       className="relative z-20 -mt-16 md:-mt-28 lg:-mt-px min-h-[760px] w-full overflow-hidden bg-transparent pb-10 scroll-mt-[123px] lg:h-[72.2222cqw] lg:min-h-0 lg:pb-0 lg:scroll-mt-[8.5417cqw]"
     >
       <div className="relative mx-auto w-full max-w-[1920px] [container-type:inline-size]">
-        <header className="relative -translate-y-2 px-5 pt-[max(9.5rem,calc(32.5cqw+1rem))] text-right lg:absolute lg:right-[8.3333cqw] lg:top-[3cqw] lg:w-[51.3889cqw] lg:translate-y-0 lg:px-0 lg:pt-0">
+        <header data-muncul="0" className="relative -translate-y-2 px-5 pt-[max(9.5rem,calc(32.5cqw+1rem))] text-right lg:absolute lg:right-[8.3333cqw] lg:top-[3cqw] lg:w-[51.3889cqw] lg:translate-y-0 lg:px-0 lg:pt-0">
           <h2 className="font-display text-[clamp(2.25rem,5vw,3.75rem)] font-bold leading-[0.92] text-[#0D404F] lg:text-[4.1667cqw] lg:leading-[3.8417cqw]">
             Fitur Utama
           </h2>
           <p className="mt-2 font-sans text-base font-medium leading-snug text-[#0D404F] sm:text-lg lg:mt-[0.7639cqw] lg:text-[2.5cqw] lg:leading-[3.8417cqw]">
-            Cek kepadatan jalan dan pilih rute.
-            <br />
-            Saring halte untuk cari rute dan tarif.
+            Cek jalur yang padat, jelajahi rute,
+            <br className="hidden sm:inline" /> lalu temukan angkot beserta tarifnya.
           </p>
         </header>
 
-        <div className="relative mx-4 mt-8 rounded-[24px] bg-[#086342] p-3 shadow-[0_12px_30px_rgba(10,77,56,0.14)] sm:mx-6 sm:p-4 lg:absolute lg:left-[8.2639cqw] lg:top-[17.2917cqw] lg:mx-0 lg:mt-0 lg:h-[46.1111cqw] lg:w-[83.4028cqw] lg:rounded-[2.7778cqw] lg:p-0 lg:shadow-none">
+        <div data-muncul="1" className="relative mx-4 mt-8 rounded-[24px] bg-[#086342] p-3 shadow-[0_12px_30px_rgba(10,77,56,0.14)] sm:mx-6 sm:p-4 lg:absolute lg:left-[8.2639cqw] lg:top-[17.2917cqw] lg:mx-0 lg:mt-0 lg:h-[46.1111cqw] lg:w-[83.4028cqw] lg:rounded-[2.7778cqw] lg:p-0 lg:shadow-none">
           <div
             role="tablist"
             aria-label="Fitur peta NAIK"
@@ -118,16 +100,7 @@ export default function Fitur({ data = demoRute }) {
                 />
               }
             >
-              <PetaFitur
-                activeTab={activeTab}
-                data={data}
-                selectedRoute={selectedRoute}
-                setSelectedRoute={setSelectedRoute}
-                visibleDensity={visibleDensity}
-                toggleDensity={toggleDensity}
-                visibleRoutes={visibleRoutes}
-                toggleRoute={toggleRoute}
-              />
+              <PetaFitur activeTab={activeTab} />
             </Suspense>
           </div>
         </div>

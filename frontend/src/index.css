@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Google+Sans+Flex:opsz,wdth,wght@6..144,25..151,100..1000&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @custom-variant hover (&:hover);
@@ -61,32 +60,149 @@ html {
   }
 }
 
-/* Align the SVG crest with the Lottie road lane at each responsive scale. */
+/* ---------- Muncul saat discroll (useReveal) ---------- */
+.muncul-siap {
+  opacity: 0;
+  transform: translate3d(0, 28px, 0);
+  transition:
+    opacity 650ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 750ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.muncul-siap.muncul {
+  opacity: 1;
+  transform: none;
+}
+
+.muncul-siap.muncul-selesai {
+  will-change: auto;
+}
+
+/* ---------- Hero: angkot, awan, matahari (hanya transform -> ringan, tidak menggambar ulang kota) ---------- */
+.hero-mobil {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: auto;
+  will-change: transform;
+  animation: hero-jalan var(--durasi, 10s) linear var(--tunda, 0s) infinite;
+}
+
+@keyframes hero-jalan {
+  from {
+    transform: translate3d(-14cqw, 0, 0);
+  }
+
+  to {
+    transform: translate3d(104cqw, 0, 0);
+  }
+}
+
+.hero-awan {
+  animation: hero-awan 28s ease-in-out infinite alternate;
+}
+
+@keyframes hero-awan {
+  from {
+    transform: translate3d(-1.6cqw, 0, 0);
+  }
+
+  to {
+    transform: translate3d(1.6cqw, 0, 0);
+  }
+}
+
+.hero-matahari {
+  animation: hero-matahari 3.2s ease-in-out infinite alternate;
+}
+
+@keyframes hero-matahari {
+  from {
+    transform: scale(1);
+  }
+
+  to {
+    transform: scale(1.14);
+  }
+}
+
+.hero-diam .hero-mobil,
+.hero-diam .hero-awan,
+.hero-diam .hero-matahari {
+  animation-play-state: paused;
+}
+
+.hero-muncul {
+  animation: hero-muncul 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes hero-muncul {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.hero-panah {
+  display: flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  color: var(--color-hero-brown);
+  transition: background-color 150ms ease;
+}
+
+.hero-panah:hover {
+  background: rgb(0 0 0 / 6%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-mobil,
+  .hero-awan,
+  .hero-matahari,
+  .hero-muncul {
+    animation: none;
+  }
+
+  .hero-mobil {
+    transform: translate3d(30cqw, 0, 0);
+  }
+}
+
+/* Puncak gelombang bagian Tentang diletakkan sedikit di bawah jalan supaya angkot tidak tertutup. */
 .hero-section + #tentang {
-  margin-top: calc(210px + 54.725cqw - max(520px, 100cqw) - 16cqw);
+  margin-top: calc(210px + 60.225cqw - max(520px, 100cqw) - 16cqw);
 }
 
 @media (min-width: 640px) {
   .hero-section + #tentang {
-    margin-top: calc(100px + 54.725cqw - max(520px, min(760px, 100cqw)) - 16cqw);
+    margin-top: calc(100px + 60.225cqw - max(520px, min(760px, 100cqw)) - 16cqw);
   }
 }
 
 @media (min-width: 900px) {
   .hero-section + #tentang {
-    margin-top: calc(-10px - 41.275cqw);
+    margin-top: calc(-10px - 35.775cqw);
   }
 }
 
 @media (min-width: 1024px) {
   .hero-section + #tentang {
-    margin-top: -41.1366cqw;
+    margin-top: -35.6366cqw;
   }
 }
 
 @media (orientation: landscape) and (max-height: 600px) and (max-width: 1023px) {
   .hero-section + #tentang {
-    margin-top: calc(clamp(48px, 14vh, 72px) + 74.725cqw - max(760px, 105cqw) - 16cqw);
+    margin-top: calc(clamp(48px, 14vh, 72px) + 80.225cqw - max(760px, 105cqw) - 16cqw);
   }
 }
 

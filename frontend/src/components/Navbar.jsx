@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import logoNaik from '../assets/logo-naik.svg'
+import { Link } from 'react-router-dom'
+import logoNaik from '../assets/logo-naik.webp'
 
 const navLinks = [
   { label: 'Tentang', href: '#tentang' },
@@ -59,8 +60,8 @@ export default function Navbar() {
           hidden lg:flex items-center"
       >
         {/* Logo */}
-        <a href="#" aria-label="Naik Angkot — Beranda">
-          <img src={logoNaik} alt="NAIK logo" className="h-7 w-auto" />
+        <a href="#top" aria-label="NAIK — kembali ke atas">
+          <img src={logoNaik} alt="NAIK" width="67" height="28" className="h-7 w-auto" />
         </a>
 
         {/* Spacer kiri */}
@@ -72,7 +73,7 @@ export default function Navbar() {
             <a
               key={link.href}
               href={link.href}
-              className="text-[20px] font-medium leading-5 text-dark transition-colors hover:text-primary"
+              className="text-[18px] font-medium leading-5 text-dark transition-colors hover:text-primary"
             >
               {link.label}
             </a>
@@ -83,12 +84,12 @@ export default function Navbar() {
         <div className="flex-1" />
 
         {/* Tombol CTA */}
-        <a
-          href="/peta"
-          className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2.5 text-[20px] font-semibold leading-5 text-white transition-opacity hover:opacity-90"
+        <Link
+          to="/peta"
+          className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2.5 text-[18px] font-semibold leading-5 text-white transition-colors hover:bg-[#178563]"
         >
-          Eksplorasi
-        </a>
+          Buka Peta
+        </Link>
       </nav>
 
       {/* ===== MOBILE NAVBAR (< 1024px) ===== */}
@@ -100,8 +101,8 @@ export default function Navbar() {
           flex lg:hidden items-center"
       >
         {/* Logo */}
-        <a href="#" aria-label="Naik Angkot — Beranda">
-          <img src={logoNaik} alt="NAIK logo" className="h-5 w-auto sm:h-[22px]" />
+        <a href="#top" aria-label="NAIK — kembali ke atas">
+          <img src={logoNaik} alt="NAIK" width="48" height="20" className="h-5 w-auto sm:h-[22px]" />
         </a>
 
         <div className="flex-1" />
@@ -136,13 +137,13 @@ export default function Navbar() {
               {link.label}
             </a>
           ))}
-          <a
-            href="/peta"
-            className="mt-1 inline-flex items-center justify-center rounded-full bg-primary px-5 py-3 text-base font-semibold text-white transition-opacity hover:opacity-90"
+          <Link
+            to="/peta"
+            className="mt-1 inline-flex items-center justify-center rounded-full bg-primary px-5 py-3 text-base font-semibold text-white transition-colors hover:bg-[#178563]"
             onClick={closeMenu}
           >
-            Eksplorasi
-          </a>
+            Buka Peta
+          </Link>
         </div>
       )}
     </>

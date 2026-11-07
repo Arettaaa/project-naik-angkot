@@ -50,20 +50,20 @@ export default function Tentang() {
         */}
         <div className="relative z-10 flex flex-col items-center gap-3 px-5 pb-20 pt-[max(7rem,calc(22cqw+2rem))] sm:gap-4 sm:px-8 sm:pt-[calc(22cqw+2.5rem)] md:grid md:grid-cols-2 md:items-center md:gap-x-8 md:gap-y-6 md:px-10 md:pt-[calc(22cqw+3rem)] md:pb-28 md:max-w-4xl md:mx-auto lg:block lg:h-[86.1111cqw] lg:max-w-none lg:px-0 lg:pb-0 lg:pt-0">
           {/* Judul */}
-          <h2 className="w-full max-w-[560px] self-start font-display text-[clamp(2rem,7vw,3.25rem)] font-bold leading-[0.93] text-tentang-dark md:col-span-2 md:max-w-none md:text-[clamp(2.25rem,4vw,3.25rem)] lg:absolute lg:left-[8.2639cqw] lg:top-[23.5cqw] lg:w-[31.5278cqw] lg:max-w-none lg:text-[4.1667cqw] lg:leading-[3.8417cqw] lg:whitespace-nowrap">
+          <h2 data-muncul="0" className="w-full max-w-[560px] self-start font-display text-[clamp(2rem,7vw,3.25rem)] font-bold leading-[0.93] text-tentang-dark md:col-span-2 md:max-w-none md:text-[clamp(2.25rem,4vw,3.25rem)] lg:absolute lg:left-[8.2639cqw] lg:top-[23.5cqw] lg:w-[31.5278cqw] lg:max-w-none lg:text-[4.1667cqw] lg:leading-[3.8417cqw] lg:whitespace-nowrap">
             <span className="block whitespace-nowrap">Rute Angkot</span>
             <span className="block whitespace-nowrap">dalam Satu Layar.</span>
           </h2>
 
           {/* Paragraf */}
-          <p className="w-full max-w-[560px] self-start font-sans text-[clamp(0.8125rem,3.8vw,1.75rem)] font-semibold leading-[1.45] text-tentang-dark md:col-span-2 md:max-w-none md:text-xl lg:absolute lg:left-[8.2639cqw] lg:top-[32.3cqw] lg:w-[51.3cqw] lg:max-w-none lg:text-[2.5cqw] lg:leading-[3.8417cqw]">
+          <p data-muncul="1" className="w-full max-w-[560px] self-start font-sans text-[clamp(0.8125rem,3.8vw,1.75rem)] font-semibold leading-[1.45] text-tentang-dark md:col-span-2 md:max-w-none md:text-xl lg:absolute lg:left-[8.2639cqw] lg:top-[32.3cqw] lg:w-[51.3cqw] lg:max-w-none lg:text-[2.5cqw] lg:leading-[3.8417cqw]">
             <span className="whitespace-nowrap">Tak perlu lagi bingung warna atau jurusan.</span>
             <br />
             Semua info rute angkot Kota Bogor ada di genggamanmu.
           </p>
 
           {/* Kartu Tumpuk (lebar sama persis dengan peta saat tab dikecilkan: 280px) */}
-          <div className="mt-4 flex w-full justify-center sm:mt-5 md:col-span-1 md:mt-0 md:justify-center lg:absolute lg:left-[13.4259cqw] lg:top-[50.5cqw] lg:mt-0 lg:block z-20">
+          <div data-muncul="2" className="mt-4 flex w-full justify-center sm:mt-5 md:col-span-1 md:mt-0 md:justify-center lg:absolute lg:left-[13.4259cqw] lg:top-[50.5cqw] lg:mt-0 lg:block z-20">
             <KartuTumpuk />
           </div>
 
@@ -77,7 +77,7 @@ export default function Tentang() {
           </div>
 
           {/* Peta Bogor untuk Desktop (mempertahankan rasio dan koordinat asli Figma) */}
-          <div className="hidden lg:block lg:absolute lg:left-[47.9cqw] lg:top-[9.72cqw] lg:w-[52.2cqw] lg:max-w-none z-20">
+          <div data-muncul="1" className="hidden lg:block lg:absolute lg:left-[47.9cqw] lg:top-[9.72cqw] lg:w-[52.2cqw] lg:max-w-none z-20">
             <PetaBogorVektor alt="Peta wilayah Kota Bogor" className="h-auto w-full select-none" />
           </div>
         </div>

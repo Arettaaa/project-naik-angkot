@@ -5,25 +5,22 @@ import ikonSulit from '../assets/tentang/ikon-sulit.svg'
 export const kartuTentang = [
   {
     id: 'rute-presisi',
-    judul: 'Rute Presisi',
-    deskripsi:
-      'Temukan titik naik-turun dan rute paling efisien tanpa takut salah angkot.',
+    judul: 'Rute Jelas',
+    deskripsi: 'Lihat jalur setiap angkot lengkap dengan nama jalan yang dilewati.',
     warna: '#FF7D1F',
     ikon: ikonPresisi,
   },
   {
     id: 'panduan-transit',
-    judul: 'Panduan Transit',
-    deskripsi:
-      'Informasi rute jauh lebih mudah dipahami ketika ditampilkan langsung pada peta.',
+    judul: 'Titik Pindah',
+    deskripsi: 'Perlu ganti angkot? NAIK menunjukkan tempat turun dan angkot berikutnya.',
     warna: '#09B58D',
     ikon: ikonPanduan,
   },
   {
     id: 'sulit-menentukan',
-    judul: 'Sulit Menentukan',
-    deskripsi:
-      'Pengguna butuh bantuan menemukan rute berdasarkan lokasi asal dan tujuan.',
+    judul: 'Asal ke Tujuan',
+    deskripsi: 'Cukup isi asal dan tujuan. Angkot tercepat beserta tarifnya langsung muncul.',
     warna: '#FFC700',
     ikon: ikonSulit,
   },
