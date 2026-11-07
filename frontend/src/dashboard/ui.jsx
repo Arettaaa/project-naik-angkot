@@ -27,19 +27,19 @@ export function Card({ className = '', children }) {
 
 export function CardHeader({ title, subtitle, icon, onClose }) {
   return (
-    <div className="flex items-start gap-3 px-5 pt-5 lg:px-6 lg:pt-6">
+    <div className="flex items-start gap-3 px-5 pt-5 pb-1 sm:px-6 sm:pt-6 sm:pb-2">
       <div className="min-w-0 flex-1">
-        <h2 className="flex items-center gap-2 font-display text-[22px] font-bold leading-tight text-tentang-dark">
-          {icon && <span className="text-primary">{icon}</span>}
-          {title}
+        <h2 className="flex items-center gap-2 font-display text-[19px] sm:text-[22px] font-bold leading-snug text-tentang-dark">
+          {icon && <span className="text-primary shrink-0">{icon}</span>}
+          <span>{title}</span>
         </h2>
-        {subtitle && <p className="mt-1.5 text-[13px] text-dark/60">{subtitle}</p>}
+        {subtitle && <p className="mt-1 text-xs text-dark/65 sm:mt-1.5 sm:text-[13px] leading-relaxed">{subtitle}</p>}
       </div>
       {onClose && (
         <button
           onClick={onClose}
           aria-label="Tutup"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/50 transition hover:bg-mist hover:text-dark"
+          className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full bg-[#F1F4F5] text-dark/60 transition hover:bg-mist hover:text-dark active:scale-95"
         >
           <IconX className="h-4 w-4" />
         </button>

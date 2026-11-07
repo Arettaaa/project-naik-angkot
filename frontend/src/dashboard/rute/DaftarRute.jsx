@@ -63,13 +63,15 @@ export default function DaftarRute({ trayek, kodeAktif, onPilih, onClose, onRetr
         )}
       </div>
       <Muat loading={trayek.loading} error={trayek.error} onRetry={onRetry} />
-      <ul className="naik-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-auto px-5 pb-5 lg:px-6">
+      <ul className="naik-scroll mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-auto px-4 pb-8 sm:px-5 lg:px-6">
         {daftar.map((t) => (
           <li key={t.kode_trayek}>
             <KartuRute trayek={t} aktif={t.kode_trayek === kodeAktif} onClick={() => onPilih(t)} />
           </li>
         ))}
         {trayek.data && daftar.length === 0 && <li className="py-6 text-center text-sm text-dark/60">Tidak ada rute yang cocok.</li>}
+        {/* Spacer agar kartu terbawah tidak terpotong lengkungan sudut bawah */}
+        <li className="h-6 shrink-0" aria-hidden="true" />
       </ul>
     </Card>
   )
