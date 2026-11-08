@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\PencariRuteDijkstra;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -307,7 +308,176 @@ class TrayekController extends Controller
      * Jarak jalan kaki otomatis: semua jalur sampai `radius` (default 800 m) dipertimbangkan, tapi
      * jalan kaki dihitung lambat (75 m/menit) sehingga jalur yang dekat tetap menang.
      */
+    /**
+     * Rekomendasi rute: Dijkstra + Yen pada graf trayek (lihat App\Services\PencariRuteDijkstra).
+     * Maksimal 3 angkot. ?metode=lama memakai pencarian lama (langsung + 1x pindah) sebagai pembanding.
+     */
     public function rekomendasi(Request $req): JsonResponse
+    {
+        if ($req->query('metode') === 'lama') {
+            return $this->rekomendasiLama($req);
+        }
+        $parse = function (?string $s) {
+            $p = array_map('trim', explode(',', (string) $s));
+            return (count($p) === 2 && is_numeric($p[0]) && is_numeric($p[1])) ? [(float) $p[0], (float) $p[1]] : null;
+        };
+        $a = $parse($req->query('asal'));
+        $b = $parse($req->query('tujuan'));
+        if (!$a || !$b) {
+            return response()->json(['message' => 'Format: asal=lat,lon&tujuan=lat,lon'], 422);
+        }
+        $rad = min(max((float) $req->query('radius', 800), 100), 1500);
+        $this->siapkanGarisRute();
+        $t0 = microtime(true);
+
+        $g = new PencariRuteDijkstra($a, $b, $rad);
+        $g->bangun();
+        // Yen dua tahap: alternatif sampai 2 angkot dulu, lalu yang 3 angkot (supaya opsi 2 angkot yang
+        // lebih murah tidak tergeser oleh rute 3 angkot yang hanya sedikit lebih cepat)
+        $g->maksAngkot = 2;
+        $hasilYen = $g->yen(12);
+        $g->maksAngkot = 3;
+        foreach ($g->yen(10) as $p) {
+            if (count($p['sisi']) === 3) {
+                $hasilYen[] = $p;
+            }
+        }
+
+        // waktu angkot langsung per rute: rute pindah yang angkot terakhirnya rute ini hanya dipakai kalau
+        // memang lebih cepat (mis. naik angkot lain dulu supaya jalan kaki ke rute itu lebih dekat)
+        $ruteLangsung = [];
+        foreach ($hasilYen as $p) {
+            if (count($p['sisi']) === 1) {
+                $ruteLangsung[$g->sisi($p['sisi'][0])['rute']] = $p['biaya'];
+            }
+        }
+        $opsi = [];
+        $urutanKode = [];
+        foreach ($hasilYen as $p) {
+            $leg = array_map(fn ($id) => $g->sisi($id), $p['sisi']);
+            $kode = array_column($leg, 'kode');
+            $kunci = implode('>', $kode);
+            if (isset($urutanKode[$kunci]) || count(array_unique($kode)) < count($kode)) {
+                continue;   // kombinasi trayek sama / trayek dipakai dua kali
+            }
+            if (count($leg) > 1 && isset($ruteLangsung[end($leg)['rute']]) && $p['biaya'] > $ruteLangsung[end($leg)['rute']] - 1) {
+                continue;
+            }
+            $urutanKode[$kunci] = true;
+            $opsi[] = ['menit' => $p['biaya'], 'leg' => $leg];
+        }
+
+        // pilih yang ditampilkan: pindah hanya kalau waktunya bersaing
+        $grup = [1 => [], 2 => [], 3 => []];
+        foreach ($opsi as $o) {
+            $grup[count($o['leg'])][] = $o;
+        }
+        $terbaik = fn ($n) => $grup[$n] ? min(array_column($grup[$n], 'menit')) : INF;
+        $b1 = $terbaik(1);
+        $b2 = $terbaik(2);
+        $grup[1] = array_slice($grup[1], 0, 5);
+        $grup[2] = array_slice(array_values(array_filter($grup[2], fn ($o) => $o['menit'] <= $b1 + 5)), 0, 5);
+        $grup[3] = array_slice(array_values(array_filter($grup[3],
+            fn ($o) => (!$grup[1] && !$grup[2]) || $o['menit'] <= min($b1, $b2) - 5)), 0, 3);
+
+        // geometri potongan jalur tiap angkot + titik pindah (sekali query)
+        $nilai = [];
+        $param = [];
+        $titikId = [];
+        foreach ($grup as $n => $os) {
+            foreach ($os as $i => $o) {
+                foreach ($o['leg'] as $j => $e) {
+                    $nilai[] = '(?::text, ?::int, ?::float8, ?::float8)';
+                    array_push($param, "$n-$i-$j", $e['rute'], $e['f1'], $e['f2']);
+                    if ($e['v'] !== 'D') {
+                        $titikId[] = (int) substr($e['v'], 1);
+                    }
+                }
+            }
+        }
+        $geom = [];
+        if ($nilai) {
+            foreach (DB::select("SELECT v.k, ST_AsGeoJSON(ST_Transform(ST_LineSubstring(r.g, v.f1, v.f2), 4326), 6) AS gj
+                                 FROM (VALUES " . implode(',', $nilai) . ") v(k, rid, f1, f2)
+                                 JOIN naik.mv_rute_garis r ON r.rute_id = v.rid", $param) as $x) {
+                $geom[$x->k] = json_decode($x->gj);
+            }
+        }
+        $titik = [];
+        if ($titikId) {
+            $in = implode(',', array_fill(0, count($titikId), '?'));
+            foreach (DB::select("SELECT transfer_id, ST_AsGeoJSON(geom, 6) AS gj FROM naik.titik_transfer WHERE transfer_id IN ($in)", $titikId) as $x) {
+                $titik['t' . $x->transfer_id] = json_decode($x->gj);
+            }
+        }
+        $tarifUmum = (int) DB::selectOne(self::TARIF_UMUM)->tarif;
+        $tarif = [];
+        foreach (DB::select('SELECT kode_trayek, tarif FROM naik.tarif_rute') as $x) {
+            $tarif[$x->kode_trayek] = $x->tarif !== null ? (int) $x->tarif : $tarifUmum;
+        }
+
+        $keluaran = [1 => [], 2 => [], 3 => []];
+        foreach ($grup as $n => $os) {
+            foreach ($os as $i => $o) {
+                $leg = $o['leg'];
+                $legs = [];
+                $pindah = [];
+                foreach ($leg as $j => $e) {
+                    [$kode, $arah, $nama] = $g->infoRute($e['rute']);
+                    $legs[] = ['kode_trayek' => $kode, 'rute_id' => $e['rute'], 'arah' => $arah, 'nama_trayek' => $nama,
+                               'jarak_m' => (int) round($e['naik']), 'segmen' => $geom["$n-$i-$j"] ?? null];
+                    if ($j < count($leg) - 1) {
+                        $pindah[] = ['titik' => $titik[$e['v']] ?? null, 'jalan_m' => (int) round($e['d2'] + $leg[$j + 1]['d1'])];
+                    }
+                }
+                $x = [
+                    'menit' => (int) round($o['menit']),
+                    'jalan_ke_naik_m' => (int) round($leg[0]['d1']),
+                    'jalan_dari_turun_m' => (int) round(end($leg)['d2']),
+                    'tarif' => array_sum(array_map(fn ($l) => $tarif[$l['kode_trayek']] ?? $tarifUmum, $legs)),
+                    'legs' => $legs,
+                    'pindah' => $pindah,
+                ];
+                // field lama (dipakai tampilan sebelumnya) tetap ada untuk 1 & 2 angkot
+                if ($n === 1) {
+                    $x += ['rute_id' => $legs[0]['rute_id'], 'kode_trayek' => $legs[0]['kode_trayek'], 'arah' => $legs[0]['arah'],
+                           'nama_trayek' => $legs[0]['nama_trayek'], 'jarak_angkot_m' => $legs[0]['jarak_m'], 'segmen' => $legs[0]['segmen']];
+                } else {
+                    $x['jalan_pindah_m'] = array_sum(array_column($pindah, 'jalan_m'));
+                }
+                if ($n === 2) {
+                    $x += ['kode_1' => $legs[0]['kode_trayek'], 'arah_1' => $legs[0]['arah'], 'kode_2' => $legs[1]['kode_trayek'],
+                           'arah_2' => $legs[1]['arah'], 'jarak_angkot_1_m' => $legs[0]['jarak_m'], 'jarak_angkot_2_m' => $legs[1]['jarak_m'],
+                           'titik_transfer' => $pindah[0]['titik'], 'segmen_1' => $legs[0]['segmen'], 'segmen_2' => $legs[1]['segmen']];
+                }
+                $keluaran[$n][] = $x;
+            }
+        }
+
+        $lurus = DB::selectOne("SELECT ROUND(ST_Distance(ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+                                                         ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)) AS m",
+            [$a[1], $a[0], $b[1], $b[0]]);
+
+        return response()->json([
+            'asal' => ['lat' => $a[0], 'lon' => $a[1]],
+            'tujuan' => ['lat' => $b[0], 'lon' => $b[1]],
+            'radius_jalan_kaki_m' => $rad,
+            'jarak_lurus_m' => (int) $lurus->m,
+            'langsung' => $keluaran[1],
+            'transfer' => $keluaran[2],
+            'transfer2' => $keluaran[3],
+            'metode' => [
+                'nama' => 'Dijkstra + Yen pada graf trayek',
+                'sisi_graf' => $g->jumlahSisi(),
+                'jumlah_dijkstra' => $g->jumlahDijkstra,
+                'waktu_ms' => (int) round((microtime(true) - $t0) * 1000),
+            ],
+            'catatan' => 'Urut dari perkiraan waktu: jalan kaki 4,5 km/jam, angkot 15 km/jam, tunggu 5 menit per angkot. Tarif flat per angkot.',
+        ]);
+    }
+
+    /** Pencarian lama: langsung + 1x pindah dengan SQL (dipakai sebagai pembanding, ?metode=lama). */
+    private function rekomendasiLama(Request $req): JsonResponse
     {
         $parse = function (?string $s) {
             $p = array_map('trim', explode(',', (string) $s));

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { warnaTrayek } from '../warna'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CircleMarker, GeoJSON, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet'
@@ -7,6 +7,7 @@ import { api } from '../../api/naik'
 import KolomTempat from '../components/KolomTempat'
 import PinPeta from './PinPeta'
 import { AKURAT_M, ambilLokasi } from './lokasi'
+import { JENIS_OPSI, normalOpsi } from './opsi'
 import { tempatSaya, useLayarBesar, useTempatSaya } from '../hooks'
 import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
 import { useDashboard } from '../context'
@@ -37,10 +38,7 @@ function KlikPeta({ onClick }) {
 
 // opsi tercepat dari semua hasil (langsung maupun pindah)
 function opsiTercepat(data) {
-  const semua = [
-    ...data.langsung.map((o, i) => ({ jenis: 'langsung', i, menit: o.menit ?? 0 })),
-    ...data.transfer.map((o, i) => ({ jenis: 'transfer', i, menit: o.menit ?? 0 })),
-  ]
+  const semua = JENIS_OPSI.flatMap(([jenis]) => (data[jenis] ?? []).map((o, i) => ({ jenis, i, menit: o.menit ?? 0 })))
   return semua.sort((a, b) => a.menit - b.menit)[0] ?? null
 }
 
@@ -78,7 +76,7 @@ export default function CariPanel() {
   const [tujuan, setTujuan] = useState(null)
   const [mode, setMode] = useState('asal') // titik mana yang diisi saat peta diklik
   const [hasil, setHasil] = useState({ data: null, loading: false, error: null })
-  const [pilih, setPilih] = useState(null) // {jenis:'langsung'|'transfer', i}
+  const [pilih, setPilih] = useState(null) // {jenis:'langsung'|'transfer'|'transfer2', i}
   const [detailBuka, setDetailBuka] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
   const [panelCariBuka, setPanelCariBuka] = useState(true)
   const [lokasiErr, setLokasiErr] = useState('')
@@ -312,7 +310,7 @@ export default function CariPanel() {
   )
 
   const titikFit = opsi
-    ? [asal, tujuan].map((t) => [t.lat, t.lng]).concat(garisOpsi(opsi).flat())
+    ? [asal, tujuan].map((t) => [t.lat, t.lng]).concat(normalOpsi(opsi).legs.flatMap((l) => l.garis))
     : [asal, tujuan].filter(Boolean).map((t) => [t.lat, t.lng])
 
   if (pin) {
@@ -502,14 +500,10 @@ function TitikInput({ label, warna, titik, aktif, onAktif, onPilih, onLokasiSaya
   )
 }
 
-const menitOpsi = (o) =>
-  o.menit ??
-  ('kode_1' in o
-    ? menitJalan(o.jalan_ke_naik_m + o.jalan_dari_turun_m) + menitAngkot(o.jarak_angkot_1_m + o.jarak_angkot_2_m) + 10
-    : menitJalan(o.jalan_ke_naik_m + o.jalan_dari_turun_m) + menitAngkot(o.jarak_angkot_m) + 5)
+const menitOpsi = (o) => normalOpsi(o).menit
 
 function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
-  const kosong = !data.langsung.length && !data.transfer.length
+  const kosong = JENIS_OPSI.every(([jenis]) => !data[jenis]?.length)
   const dekat = data.jarak_lurus_m != null && data.jarak_lurus_m <= 1200
   const tercepat = opsiTercepat(data)
   return (
@@ -526,24 +520,21 @@ function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
         <PanelSection>
           <p className="text-sm font-semibold">Belum ada angkot yang cocok.</p>
           <p className="mt-1 text-sm text-dark/70">
-            Tidak ada jalur angkot dalam ±{data.radius_jalan_kaki_m ?? 800} m dari titik asal/tujuan, atau perlu pindah lebih dari sekali.
+            Tidak ada jalur angkot dalam ±{data.radius_jalan_kaki_m ?? 800} m dari titik asal/tujuan, atau perlu pindah lebih dari dua kali.
             Coba geser titiknya ke jalan besar terdekat.
           </p>
         </PanelSection>
       )}
-      {[
-        ['langsung', 'Langsung · 1 angkot'],
-        ['transfer', 'Pindah 1x · 2 angkot'],
-      ].map(([jenis, judul]) =>
-        data[jenis].length ? (
+      {JENIS_OPSI.map(([jenis, judul]) =>
+        data[jenis]?.length ? (
           <PanelSection key={jenis} title={judul}>
             <div className="space-y-2">
               {data[jenis].map((o, i) => {
                 const aktif = pilih?.jenis === jenis && pilih.i === i
-                const transfer = jenis === 'transfer'
-                const kode = transfer ? [o.kode_1, o.kode_2] : [o.kode_trayek]
-                const jalan = o.jalan_ke_naik_m + o.jalan_dari_turun_m + (o.jalan_pindah_m ?? 0)
-                const angkot = transfer ? o.jarak_angkot_1_m + o.jarak_angkot_2_m : o.jarak_angkot_m
+                const n = normalOpsi(o)
+                const kode = n.kode
+                const jalan = n.jalan
+                const angkot = n.jarakAngkot
                 return (
                   <KartuOpsi key={kode.join('-')} aktif={aktif} onClick={() => onPilihOpsi({ jenis, i })}>
                     <div className="flex items-center gap-1.5">
@@ -560,9 +551,9 @@ function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
                       </span>
                     </div>
                     <p className="mt-2 truncate text-[13px] font-semibold text-dark">
-                      {transfer
-                        ? `Oper ke ${nomorTampil(o.kode_2)} arah ${String(o.arah_2).replace(/^ke /, '')}`
-                        : `Arah ${String(o.arah).replace(/^ke /, '')}`}
+                      {n.legs.length > 1
+                        ? `Oper ke ${n.legs.slice(1).map((l) => nomorTampil(l.kode)).join(', lalu ')} arah ${String(n.legs.at(-1).arah).replace(/^ke /, '')}`
+                        : `Arah ${String(n.legs[0].arah).replace(/^ke /, '')}`}
                     </p>
                     <p className="mt-1 flex flex-wrap items-center gap-x-2.5 text-[11.5px] text-dark/55">
                       <span className="inline-flex items-center gap-1">
@@ -643,19 +634,19 @@ function Tahap({ ikon: Ikon, warna = '#E7EEFD', warnaIkon = '#2563EB', sorot, la
 }
 
 function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMulaiNavigasi, onStopNavigasi, activeStepIdx = 0 }) {
-  const transfer = 'kode_1' in opsi
-  const totalJalan = opsi.jalan_ke_naik_m + opsi.jalan_dari_turun_m + (opsi.jalan_pindah_m ?? 0)
-  const totalAngkot = transfer ? opsi.jarak_angkot_1_m + opsi.jarak_angkot_2_m : opsi.jarak_angkot_m
-  const k1 = transfer ? opsi.kode_1 : opsi.kode_trayek
+  const n = normalOpsi(opsi)
+  const totalJalan = n.jalan
+  const totalAngkot = n.jarakAngkot
+  // urutan tahap simulasi: jalan(0), angkot ke-i (2i+1), pindah setelah angkot ke-i (2i+2), jalan terakhir (2n)
   const sorot = (i) => navigasiAktif && activeStepIdx === i
-  const akhir = transfer ? 4 : 2
+  const akhir = 2 * n.legs.length
 
   return (
     <Card className="flex max-h-full min-h-0 flex-1 flex-col overflow-hidden">
       <CardHeader
         title="Langkah Perjalanan"
         onClose={onClose}
-        subtitle={transfer ? `Angkot ${nomorLengkap(opsi.kode_1)}, pindah ke ${nomorLengkap(opsi.kode_2)}` : `Angkot ${nomorLengkap(opsi.kode_trayek)} langsung`}
+        subtitle={n.legs.length > 1 ? `Angkot ${n.kode.map((k) => nomorLengkap(k)).join(' → ')}` : `Angkot ${nomorLengkap(n.kode[0])} langsung`}
       />
       <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-5 pt-3 pb-6 lg:px-6">
         <div className="grid grid-cols-4 gap-1 rounded-2xl bg-[#F6F9F9] p-3 text-center">
@@ -698,41 +689,33 @@ function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMu
           </Tahap>
           <Tahap ikon={IconWalk} sorot={sorot(0)} label="sekarang">
             <p className="text-[13.5px] text-dark/80">
-              Jalan kaki <strong className="text-dark">{jarak(opsi.jalan_ke_naik_m)}</strong> (±{menitJalan(opsi.jalan_ke_naik_m)} mnt) ke jalur angkot
+              Jalan kaki <strong className="text-dark">{jarak(n.jalanKeNaik)}</strong> (±{menitJalan(n.jalanKeNaik)} mnt) ke jalur angkot
             </p>
           </Tahap>
-          <Tahap ikon={IconBus} warna={warna[k1] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(1)} label="di angkot">
-            <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-dark">
-              Naik angkot <KodeBadge kode={k1} warna={warna[k1]} />
-              <PilWarga kode={k1} />
-            </p>
-            <p className="mt-0.5 text-[12px] text-dark/60">
-              Arah {transfer ? opsi.arah_1 : opsi.arah} · {jarak(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} (±
-              {menitAngkot(transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m)} mnt)
-            </p>
-          </Tahap>
-          {transfer && (
-            <>
-              <Tahap ikon={IconTransfer} warna="#EFE9FF" warnaIkon="#6D42C7" sorot={sorot(2)} label="pindah">
-                <p className="text-[13.5px] font-semibold text-[#5B34B0]">Pindah angkot</p>
-                <p className="mt-0.5 text-[12px] text-dark/60">
-                  Turun, jalan {opsi.jalan_pindah_m != null ? jarak(opsi.jalan_pindah_m) : 'sebentar'} ke jalur {nomorLengkap(opsi.kode_2)}
-                </p>
-              </Tahap>
-              <Tahap ikon={IconBus} warna={warna[opsi.kode_2] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(3)} label="di angkot">
+          {n.legs.map((l, i) => (
+            <Fragment key={`${l.kode}-${i}`}>
+              {i > 0 && (
+                <Tahap ikon={IconTransfer} warna="#EFE9FF" warnaIkon="#6D42C7" sorot={sorot(2 * i)} label="pindah">
+                  <p className="text-[13.5px] font-semibold text-[#5B34B0]">Pindah angkot</p>
+                  <p className="mt-0.5 text-[12px] text-dark/60">
+                    Turun, jalan {n.pindah[i - 1]?.jalanM != null ? jarak(n.pindah[i - 1].jalanM) : 'sebentar'} ke jalur {nomorLengkap(l.kode)}
+                  </p>
+                </Tahap>
+              )}
+              <Tahap ikon={IconBus} warna={warna[l.kode] ?? '#1A936F'} warnaIkon="#fff" sorot={sorot(2 * i + 1)} label="di angkot">
                 <p className="flex items-center gap-1.5 text-[13.5px] font-semibold text-dark">
-                  Naik angkot <KodeBadge kode={opsi.kode_2} warna={warna[opsi.kode_2]} />
-                  <PilWarga kode={opsi.kode_2} />
+                  Naik angkot <KodeBadge kode={l.kode} warna={warna[l.kode]} />
+                  <PilWarga kode={l.kode} />
                 </p>
                 <p className="mt-0.5 text-[12px] text-dark/60">
-                  Arah {opsi.arah_2} · {jarak(opsi.jarak_angkot_2_m)} (±{menitAngkot(opsi.jarak_angkot_2_m)} mnt)
+                  Arah {l.arah} · {jarak(l.jarakM)} (±{menitAngkot(l.jarakM)} mnt)
                 </p>
               </Tahap>
-            </>
-          )}
+            </Fragment>
+          ))}
           <Tahap ikon={IconWalk} sorot={sorot(akhir)} label="sekarang">
             <p className="text-[13.5px] text-dark/80">
-              Turun, jalan kaki <strong className="text-dark">{jarak(opsi.jalan_dari_turun_m)}</strong> (±{menitJalan(opsi.jalan_dari_turun_m)} mnt)
+              Turun, jalan kaki <strong className="text-dark">{jarak(n.jalanDariTurun)}</strong> (±{menitJalan(n.jalanDariTurun)} mnt)
             </p>
           </Tahap>
           <Tahap ikon="B" warna={WARNA_TUJUAN} warnaIkon="#fff">
@@ -742,7 +725,7 @@ function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMu
         </ol>
 
         <div className="mt-5 flex flex-wrap gap-2 border-t border-[#EDF1F2] pt-4">
-          {(transfer ? [opsi.kode_1, opsi.kode_2] : [opsi.kode_trayek]).map((k) => (
+          {[...new Set(n.kode)].map((k) => (
             <Link
               key={k}
               to={`/rute/${nomor(k)}`}
@@ -757,49 +740,49 @@ function DetailLangkah({ opsi, warna, asal, tujuan, onClose, navigasiAktif, onMu
   )
 }
 
-// [lat,lng] dari segmen (GeoJSON LineString) opsi
-function garisOpsi(opsi) {
-  const g = (s) => (s?.coordinates ?? []).map(([x, y]) => [y, x])
-  return 'kode_1' in opsi ? [g(opsi.segmen_1), g(opsi.segmen_2)] : [g(opsi.segmen)]
-}
+const GARIS_JALAN = { color: '#4C3935', weight: 3, dashArray: '2 8', lineCap: 'round' }
 
 function RuteOpsi({ opsi, warna, asal, tujuan }) {
-  const transfer = 'kode_1' in opsi
-  const [g1, g2] = garisOpsi(opsi)
-  const kode = transfer ? [opsi.kode_1, opsi.kode_2] : [opsi.kode_trayek]
-  const awal = g1?.[0]
-  const akhir = (g2 ?? g1)?.at(-1)
-  const tt = transfer && opsi.titik_transfer ? [opsi.titik_transfer.coordinates[1], opsi.titik_transfer.coordinates[0]] : null
+  const n = normalOpsi(opsi)
+  const garis = n.legs.map((l) => l.garis).filter((g) => g.length)
+  if (!garis.length) return null
+  const awal = garis[0][0]
+  const akhir = garis.at(-1).at(-1)
   return (
     <>
-      {awal && <Polyline positions={[[asal.lat, asal.lng], awal]} pathOptions={{ color: '#4C3935', weight: 3, dashArray: '2 8', lineCap: 'round' }} />}
-      {akhir && <Polyline positions={[akhir, [tujuan.lat, tujuan.lng]]} pathOptions={{ color: '#4C3935', weight: 3, dashArray: '2 8', lineCap: 'round' }} />}
-      {tt && g1?.length > 0 && g2?.length > 0 && (
+      <Polyline positions={[[asal.lat, asal.lng], awal]} pathOptions={GARIS_JALAN} />
+      <Polyline positions={[akhir, [tujuan.lat, tujuan.lng]]} pathOptions={GARIS_JALAN} />
+      {n.pindah.map((p, i) => {
+        const g1 = n.legs[i]?.garis
+        const g2 = n.legs[i + 1]?.garis
+        if (!g1?.length || !g2?.length) return null
         // jalan kaki di titik pindah (jalur arah lain bisa beda ruas beberapa puluh meter)
-        <Polyline positions={[g1.at(-1), tt, g2[0]]} pathOptions={{ color: '#4C3935', weight: 3, dashArray: '2 8', lineCap: 'round' }} />
+        return <Polyline key={`jp-${i}`} positions={p.titik ? [g1.at(-1), p.titik, g2[0]] : [g1.at(-1), g2[0]]} pathOptions={GARIS_JALAN} />
+      })}
+      {n.legs.map((l, i) =>
+        l.garis.length ? (
+          <GeoJSON
+            key={`${l.kode}-${i}-${JSON.stringify(l.garis[0])}-${l.garis.length}`}
+            data={{ type: 'LineString', coordinates: l.garis.map(([a, b]) => [b, a]) }}
+            style={() => ({ color: warna[l.kode] ?? '#1A936F', weight: 6, opacity: 1 })}
+          />
+        ) : null,
       )}
-      {[g1, g2].filter(Boolean).map((g, i) => (
-        <GeoJSON
-          key={`${kode[i]}-${JSON.stringify(g[0])}-${g.length}`}
-          data={{ type: 'LineString', coordinates: g.map(([a, b]) => [b, a]) }}
-          style={() => ({ color: warna[kode[i]] ?? '#1A936F', weight: 6, opacity: 1 })}
-        />
-      ))}
-      {awal && (
-        <CircleMarker center={awal} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: warna[kode[0]] ?? '#1A936F', fillOpacity: 1 }}>
-          <Tooltip direction="top">Naik {kode[0]}</Tooltip>
-        </CircleMarker>
+      <CircleMarker center={awal} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: warna[n.kode[0]] ?? '#1A936F', fillOpacity: 1 }}>
+        <Tooltip direction="top">Naik {nomorTampil(n.kode[0])}</Tooltip>
+      </CircleMarker>
+      {n.pindah.map((p, i) =>
+        p.titik ? (
+          <CircleMarker key={`tp-${i}`} center={p.titik} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#A586FF', fillOpacity: 1 }}>
+            <Tooltip permanent direction="top" offset={[0, -8]}>
+              Pindah ke {nomorLengkap(n.kode[i + 1])}
+            </Tooltip>
+          </CircleMarker>
+        ) : null,
       )}
-      {tt && (
-        <CircleMarker center={tt} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#A586FF', fillOpacity: 1 }}>
-          <Tooltip permanent direction="top" offset={[0, -8]}>Pindah ke {nomorLengkap(kode[1])}</Tooltip>
-        </CircleMarker>
-      )}
-      {akhir && (
-        <CircleMarker center={akhir} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: warna[kode.at(-1)] ?? '#1A936F', fillOpacity: 1 }}>
-          <Tooltip direction="top">Turun</Tooltip>
-        </CircleMarker>
-      )}
+      <CircleMarker center={akhir} radius={6} pathOptions={{ color: '#fff', weight: 2, fillColor: warna[n.kode.at(-1)] ?? '#1A936F', fillOpacity: 1 }}>
+        <Tooltip direction="top">Turun</Tooltip>
+      </CircleMarker>
     </>
   )
 }

@@ -8,6 +8,7 @@ import {
 } from '../icons'
 import { Lapisan } from '../ui'
 import { nomorLengkap, nomorTampil } from '../nomorWarga'
+import { normalOpsi } from './opsi'
 import { arahPada, dekatiSudut, halus, ikonAngkot, ikonJalan, ikutiKamera, jarakM, putarPenanda, titikPada, useJam } from '../simulasi'
 
 // Simulasi perjalanan (animasi, BUKAN pelacakan posisi asli): jalan kaki -> naik angkot -> (pindah) -> jalan kaki.
@@ -16,50 +17,40 @@ import { arahPada, dekatiSudut, halus, ikonAngkot, ikonJalan, ikutiKamera, jarak
 const TUNGGU_MS = 1300 // jeda "menunggu angkot" sebelum angkot bergerak
 const IKON_TAHAP = { jalan: IconWalk, angkot: IconBus, transit: IconTransfer, tiba: IconFlag }
 
-function garisOpsi(opsi) {
-  const g = (s) => (s?.coordinates ?? []).map(([x, y]) => [y, x])
-  return 'kode_1' in opsi ? [g(opsi.segmen_1), g(opsi.segmen_2)] : [g(opsi.segmen)]
-}
-
 /** tahapan + lintasan gabungan + pembagian waktu animasi */
 function susunLangkahNavigasi(opsi, asal, tujuan, warna) {
   const kosong = { langkah: [], lin: { pts: [], kum: [0], total: 0 }, durasiMs: 1 }
   if (!opsi || !asal || !tujuan) return kosong
-  const transfer = 'kode_1' in opsi
-  const [g1, g2] = garisOpsi(opsi)
-  if (!g1?.length) return kosong
-  const tt = transfer && opsi.titik_transfer ? [opsi.titik_transfer.coordinates[1], opsi.titik_transfer.coordinates[0]] : null
+  const n = normalOpsi(opsi)
+  if (!n.legs[0]?.garis.length || n.legs.some((l) => !l.garis.length)) return kosong
   const A = [asal.lat, asal.lng]
   const B = [tujuan.lat, tujuan.lng]
 
-  const k1 = transfer ? opsi.kode_1 : opsi.kode_trayek
   const tahap = [
     {
-      tipe: 'jalan', titik: [A, g1[0]], jarakM: opsi.jalan_ke_naik_m,
-      judul: 'Jalan ke titik naik', instruksi: `Jalan ke jalur angkot ${nomorTampil(k1)}`,
+      tipe: 'jalan', titik: [A, n.legs[0].garis[0]], jarakM: n.jalanKeNaik,
+      judul: 'Jalan ke titik naik', instruksi: `Jalan ke jalur angkot ${nomorTampil(n.kode[0])}`,
       sub: 'Tunggu angkot di tepi jalan',
     },
-    {
-      tipe: 'angkot', titik: g1, kode: k1, warna: warna[k1], jarakM: transfer ? opsi.jarak_angkot_1_m : opsi.jarak_angkot_m,
-      judul: `Naik angkot ${nomorLengkap(k1)}`, instruksi: `Naik angkot ${nomorLengkap(k1)} arah ${transfer ? opsi.arah_1 : opsi.arah}`,
-      sub: transfer ? `Turun di titik pindah ke ${nomorTampil(opsi.kode_2)}` : 'Turun di dekat tujuan',
-    },
   ]
-  if (transfer && g2?.length) {
-    tahap.push(
-      {
-        tipe: 'transit', titik: tt ? [g1.at(-1), tt, g2[0]] : [g1.at(-1), g2[0]], jarakM: opsi.jalan_pindah_m,
-        judul: 'Pindah angkot', instruksi: `Turun, pindah ke angkot ${nomorTampil(opsi.kode_2)}`, sub: 'Jalan sebentar ke jalur angkot berikutnya',
-      },
-      {
-        tipe: 'angkot', titik: g2, kode: opsi.kode_2, warna: warna[opsi.kode_2], jarakM: opsi.jarak_angkot_2_m,
-        judul: `Naik angkot ${nomorLengkap(opsi.kode_2)}`, instruksi: `Naik angkot ${nomorLengkap(opsi.kode_2)} arah ${opsi.arah_2}`,
-        sub: 'Turun di dekat tujuan',
-      },
-    )
-  }
+  n.legs.forEach((l, i) => {
+    if (i > 0) {
+      const sebelum = n.legs[i - 1].garis.at(-1)
+      const tt = n.pindah[i - 1]?.titik
+      tahap.push({
+        tipe: 'transit', titik: tt ? [sebelum, tt, l.garis[0]] : [sebelum, l.garis[0]], jarakM: n.pindah[i - 1]?.jalanM,
+        judul: 'Pindah angkot', instruksi: `Turun, pindah ke angkot ${nomorTampil(l.kode)}`, sub: 'Jalan sebentar ke jalur angkot berikutnya',
+      })
+    }
+    const terakhir = i === n.legs.length - 1
+    tahap.push({
+      tipe: 'angkot', titik: l.garis, kode: l.kode, warna: warna[l.kode], jarakM: l.jarakM,
+      judul: `Naik angkot ${nomorLengkap(l.kode)}`, instruksi: `Naik angkot ${nomorLengkap(l.kode)} arah ${l.arah}`,
+      sub: terakhir ? 'Turun di dekat tujuan' : `Turun di titik pindah ke ${nomorTampil(n.kode[i + 1])}`,
+    })
+  })
   tahap.push({
-    tipe: 'jalan', titik: [(g2?.length ? g2 : g1).at(-1), B], jarakM: opsi.jalan_dari_turun_m,
+    tipe: 'jalan', titik: [n.legs.at(-1).garis.at(-1), B], jarakM: n.jalanDariTurun,
     judul: 'Jalan ke tujuan', instruksi: `Jalan ke ${tujuan.nama || 'tujuan'}`, sub: 'Hampir sampai',
   })
 
