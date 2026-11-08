@@ -102,15 +102,16 @@ html {
 .hero-awan {
   animation: hero-awan 28s ease-in-out infinite alternate;
 }
+.hero-awan-lambat {
+  animation: hero-awan 45s ease-in-out -12s infinite alternate;
+}
+.hero-awan-cepat {
+  animation: hero-awan 20s ease-in-out -5s infinite alternate;
+}
 
 @keyframes hero-awan {
-  from {
-    transform: translate3d(-1.6cqw, 0, 0);
-  }
-
-  to {
-    transform: translate3d(1.6cqw, 0, 0);
-  }
+  from { transform: translate3d(-5cqw, 0, 0); }
+  to   { transform: translate3d(5cqw, 0, 0); }
 }
 
 .hero-matahari {
@@ -129,9 +130,12 @@ html {
 
 .hero-diam .hero-mobil,
 .hero-diam .hero-awan,
+.hero-diam .hero-awan-lambat,
+.hero-diam .hero-awan-cepat,
 .hero-diam .hero-matahari {
   animation-play-state: paused;
 }
+
 
 .hero-muncul {
   animation: hero-muncul 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -165,12 +169,14 @@ html {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-mobil,
-  .hero-awan,
-  .hero-matahari,
-  .hero-muncul {
-    animation: none;
-  }
+.hero-mobil,
+.hero-awan,
+.hero-awan-lambat,
+.hero-awan-cepat,
+.hero-matahari,
+.hero-muncul {
+  animation: none;
+}
 
   .hero-mobil {
     transform: translate3d(30cqw, 0, 0);

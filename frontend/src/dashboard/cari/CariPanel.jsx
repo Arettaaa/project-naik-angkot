@@ -93,6 +93,8 @@ export default function CariPanel() {
   const [activeStepNav, setActiveStepNav] = useState(0)
   const besar = useLayarBesar()
   const hasilRef = useRef(null)
+  const permintaan = useRef(0)
+  
 
   // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, lalu pengguna isi asal sendiri.
   // Lokasi GPS TIDAK diambil otomatis: hanya kalau pengguna menekan "Lokasi saya".
@@ -107,9 +109,6 @@ export default function CariPanel() {
     if (params.get('pin') === 'tujuan' || params.get('pin') === 'asal') bukaPin(params.get('pin'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
- 
-// asal-tujuan lebih dekat dari ini = sudah sampai, tidak dicarikan angkot (m)
-const SUDAH_SAMPAI_M = 150
 
   function setTitik(jenis, titik) {
     if (jenis === 'asal') setAsal(titik)
@@ -167,7 +166,7 @@ const SUDAH_SAMPAI_M = 150
   }
 
   async function cari() {
-    if (!asal || !tujuan) return
+    if (!asal || !tujuan || sudahSampai) return
     const id = ++permintaan.current
     setHasil((h) => ({ data: h.data, loading: true, error: null }))
     setNavigasiAktif(false)
@@ -194,7 +193,26 @@ const SUDAH_SAMPAI_M = 150
     setNavigasiAktif(false)
   }
 
-  const opsi = pilih && hasil.data ? hasil.data[pilih.jenis][pilih.i] : null
+const opsi = pilih && hasil.data ? hasil.data[pilih.jenis][pilih.i] : null
+
+// jarak lurus asal-tujuan (m), haversine
+const jarakAsalTujuan = useMemo(() => {
+  if (!asal || !tujuan) return null
+  const R = 6371000
+  const rad = (d) => (d * Math.PI) / 180
+  const dLat = rad(tujuan.lat - asal.lat)
+  const dLng = rad(tujuan.lng - asal.lng)
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(asal.lat)) * Math.cos(rad(tujuan.lat)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}, [asal, tujuan])
+const sudahSampai = jarakAsalTujuan != null && jarakAsalTujuan < SUDAH_SAMPAI_M
+
+// cari otomatis begitu asal & tujuan lengkap (dan tidak terlalu dekat)
+useEffect(() => {
+  if (asal && tujuan && !sudahSampai) cari()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [asal?.lat, asal?.lng, tujuan?.lat, tujuan?.lng, sudahSampai])
+
 
   function pilihOpsi(p) {
     setPilih(p)
@@ -327,7 +345,7 @@ const SUDAH_SAMPAI_M = 150
     </Card>
   )
 
-  const titikFit = opsi
+  const titikFit = opsi && asal && tujuan
     ? [asal, tujuan].map((t) => [t.lat, t.lng]).concat(normalOpsi(opsi).legs.flatMap((l) => l.garis))
     : [asal, tujuan].filter(Boolean).map((t) => [t.lat, t.lng])
 

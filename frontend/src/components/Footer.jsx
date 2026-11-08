@@ -5,14 +5,14 @@ import logoNaik from '../assets/logo-naik.webp'
 import useAwanParallax from '../hooks/useAwanParallax'
 
 const JELAJAHI = [
-  { label: 'Peta kepadatan', to: '/peta' },
-  { label: 'Daftar rute angkot', to: '/rute' },
-  { label: 'Cari rute', to: '/cari' },
+  { label: 'Peta Kepadatan', to: '/peta' },
+  { label: 'Daftar Rute', to: '/rute' },
+  { label: 'Cari Rute', to: '/cari' },
 ]
 
 const HALAMAN = [
-  { label: 'Tentang NAIK', href: '#tentang' },
-  { label: 'Fitur utama', href: '#fitur' },
+  { label: 'Tentang', href: '#tentang' },
+  { label: 'Fitur', href: '#fitur' },
   { label: 'Panduan', href: '#panduan' },
 ]
 
@@ -50,11 +50,7 @@ export default function Footer() {
               <img src={logoNaik} alt="NAIK" width="72" height="30" className="h-[30px] w-auto brightness-0 invert" />
             </Link>
             <p className="mt-4 max-w-[30rem] font-sans text-base leading-relaxed text-white/90">
-              NAIK membantu kamu menemukan angkot yang tepat di Kota Bogor. Cek rute, titik pindah, dan kepadatan jalur angkot
-              dalam satu peta.
-            </p>
-            <p className="mt-4 max-w-[30rem] font-sans text-sm leading-relaxed text-white/70">
-              Dibuat oleh Kelompok 9 B2 untuk tugas mata kuliah Sistem Informasi Geografis dan Manajemen Proyek Teknologi Informasi.
+              Temukan angkot yang tepat di Kota Bogor. Cek rute, titik pindah, dan kepadatan jalur dalam satu peta.
             </p>
           </section>
 
@@ -68,7 +64,7 @@ export default function Footer() {
             ))}
           </Kolom>
 
-          <Kolom judul="Halaman ini">
+          <Kolom judul="Halaman">
             {HALAMAN.map((l) => (
               <li key={l.href}>
                 <a href={l.href} className={kelasTautan}>
@@ -80,11 +76,11 @@ export default function Footer() {
         </div>
 
         <div className="mt-12 flex flex-col gap-2 border-t border-white/25 pt-6 font-sans text-sm text-white/80 sm:flex-row sm:items-center sm:justify-between lg:mt-16">
-          <p>© 2026 NAIK · Kelompok 9 B2</p>
+          <p>© 2026 NAIK</p>
           <p>
-            Data jalan dan peta ©{' '}
+            Data peta ©{' '}
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
-              kontributor OpenStreetMap
+              OpenStreetMap contributors
             </a>
           </p>
         </div>
