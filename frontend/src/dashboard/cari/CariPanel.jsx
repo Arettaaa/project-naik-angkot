@@ -53,8 +53,10 @@ function FitToPoints({ points, detailBuka, navigasiAktif }) {
     const isDesktop = window.innerWidth >= 1024
     const kiri = isDesktop ? 460 : 30
     const kanan = isDesktop && detailBuka ? 400 : 30
+    const bawah = !isDesktop && detailBuka ? Math.round(window.innerHeight * 0.46) : 120
+    const atas = !isDesktop ? 70 : 60
     if (p.length === 1) map.setView(p[0], Math.max(map.getZoom(), 15))
-    else map.fitBounds(L.latLngBounds(p), { paddingTopLeft: [kiri, 60], paddingBottomRight: [kanan, 120] })
+    else map.fitBounds(L.latLngBounds(p), { paddingTopLeft: [kiri, atas], paddingBottomRight: [kanan, bawah] })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, map, detailBuka, navigasiAktif])
   return null
@@ -76,7 +78,7 @@ export default function CariPanel() {
   const [mode, setMode] = useState('asal') // titik mana yang diisi saat peta diklik
   const [hasil, setHasil] = useState({ data: null, loading: false, error: null })
   const [pilih, setPilih] = useState(null) // {jenis:'langsung'|'transfer', i}
-  const [detailBuka, setDetailBuka] = useState(true)
+  const [detailBuka, setDetailBuka] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
   const [panelCariBuka, setPanelCariBuka] = useState(true)
   const [lokasiErr, setLokasiErr] = useState('')
   const [pin, setPin] = useState(null) // 'asal' | 'tujuan' saat memilih lewat pin geser
@@ -203,7 +205,10 @@ export default function CariPanel() {
         title="Cari Rute"
         icon={<IconSearch className="h-5 w-5" />}
         subtitle={<span className="hidden sm:inline">Tentukan asal & tujuan, NAIK carikan angkot langsung atau 1x pindah.</span>}
-        onClose={() => setPanelCariBuka(false)}
+        onClose={() => {
+          setPanelCariBuka(false)
+          if (opsi && !besar) setDetailBuka(true)
+        }}
       />
       <div className="naik-scroll min-h-0 flex-1 overflow-y-auto px-4.5 pt-3 pb-5 sm:px-5 lg:px-6">
         <TitikInput
@@ -301,21 +306,24 @@ export default function CariPanel() {
 
   return (
     <>
-      {/* Panel Kiri Pencarian: sembunyikan atau ciutkan saat navigasi aktif atau saat ditutup */}
-      {!navigasiAktif && panelCariBuka ? (
-        <Floating className="top-3.5 left-3.5 right-3.5 flex max-h-[58vh] flex-col lg:top-3 lg:bottom-auto lg:left-[94px] lg:right-auto lg:max-h-[calc(100%-24px)] lg:w-[365px]">
+      {/* Panel Kiri Pencarian: sembunyikan atau ciutkan saat navigasi aktif, saat ditutup, atau di HP saat detail langkah dibuka */}
+      {!navigasiAktif && panelCariBuka && (besar || !(opsi && detailBuka)) ? (
+        <Floating className="top-3.5 left-3.5 right-3.5 flex max-h-[75vh] flex-col lg:top-3 lg:bottom-auto lg:left-[94px] lg:right-auto lg:max-h-[calc(100%-24px)] lg:w-[365px]">
           {panel}
         </Floating>
-      ) : !navigasiAktif && !panelCariBuka ? (
+      ) : !navigasiAktif && (!panelCariBuka || (!besar && opsi && detailBuka)) ? (
         <Floating className="top-3.5 left-3.5 z-[1000] lg:top-3 lg:left-[94px]">
           <button
-            onClick={() => setPanelCariBuka(true)}
-            className="flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-xs font-bold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.18)] ring-1 ring-black/5 hover:bg-mist active:scale-95"
+            onClick={() => {
+              setPanelCariBuka(true)
+              if (!besar) setDetailBuka(false)
+            }}
+            className="flex items-center gap-2 rounded-2xl bg-white px-3.5 py-2.5 text-xs font-bold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.18)] ring-1 ring-black/5 hover:bg-mist active:scale-95"
           >
             <IconSearch className="h-4 w-4 text-primary" />
-            <span>Cari Rute</span>
+            <span>Ubah rute</span>
             {asal && tujuan && (
-              <span className="text-dark/50 font-medium truncate max-w-[140px]">
+              <span className="text-dark/50 font-medium truncate max-w-[150px]">
                 • {asal.nama.slice(0, 10)} → {tujuan.nama.slice(0, 10)}
               </span>
             )}
@@ -348,7 +356,7 @@ export default function CariPanel() {
 
       {/* Floating Panel Kanan: Detail Langkah Perjalanan (Sebelum Navigasi) */}
       {opsi && detailBuka && !navigasiAktif && (
-        <Floating className="right-3 bottom-24 left-3 flex max-h-[48%] flex-col lg:top-3 lg:bottom-auto lg:left-auto lg:max-h-[calc(100%-24px)] lg:w-[372px]">
+        <Floating className="right-3 bottom-24 left-3 flex max-h-[50vh] flex-col lg:top-3 lg:bottom-auto lg:left-auto lg:max-h-[calc(100%-24px)] lg:w-[372px]">
           <DetailLangkah
             opsi={opsi}
             warna={warna}
@@ -381,7 +389,10 @@ export default function CariPanel() {
       {opsi && !detailBuka && !navigasiAktif && (
         <Floating className="bottom-24 right-3 lg:bottom-4 lg:right-4">
           <button
-            onClick={() => setDetailBuka(true)}
+            onClick={() => {
+              setDetailBuka(true)
+              if (!besar) setPanelCariBuka(false)
+            }}
             className="inline-flex h-11 items-center gap-2 rounded-2xl bg-white px-4 text-[13px] font-semibold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.16)] transition hover:bg-[#F6F9F9] active:scale-[0.98]"
           >
             <IconList className="h-4 w-4 text-primary" /> Langkah perjalanan

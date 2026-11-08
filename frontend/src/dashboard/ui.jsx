@@ -126,35 +126,79 @@ export function OutlineButton({ className = '', children, ...p }) {
 }
 
 // Kotak nomor trayek berwarna (01, 03, ...).
-// isi badge/chip nomor trayek: trayek lama (AK) ditulis dua baris "09" + "LAMA"
 export function IsiNomor({ kode }) {
-  const n = String(kode ?? '').replace(/^Trayek\s*/i, '')
-  if (!trayekLama(kode)) return n
-  return (
-    <span className="flex flex-col items-center leading-none">
-      {n.replace(/AK$/i, '')}
-      <span className="mt-0.5 text-[8.5px] font-semibold tracking-wide uppercase opacity-85">lama</span>
-    </span>
-  )
+  return String(kode ?? '').replace(/^Trayek\s*/i, '').replace(/AK$/i, '')
 }
 
-export function KodeBadge({ kode, warna, size = 'md' }) {
-  const s = { sm: 'h-7 w-7 rounded-lg text-xs', md: 'h-11 w-11 rounded-xl text-[17px]', lg: 'h-12 w-12 rounded-2xl text-xl' }[size]
+export function KodeBadge({ kode, warna, size = 'md', className = '' }) {
+  const isLama = trayekLama(kode)
+  const n = IsiNomor({ kode })
+  const bg = warna ?? warnaTrayek(kode)
+
+  if (!isLama) {
+    const s = {
+      sm: 'h-7 w-7 rounded-lg text-xs',
+      md: 'h-11 w-11 rounded-xl text-[17px]',
+      lg: 'h-12 w-12 rounded-2xl text-xl',
+    }[size] ?? 'h-11 w-11 rounded-xl text-[17px]'
+
+    return (
+      <span
+        className={`inline-flex shrink-0 items-center justify-center font-display font-bold text-white shadow-xs ${s} ${className}`}
+        style={{ backgroundColor: bg }}
+      >
+        {n}
+      </span>
+    )
+  }
+
+  // Tampilan khusus trayek lama: horizontal, lega, proporsional, dan tidak mepet
+  const s = {
+    sm: {
+      box: 'h-7 rounded-lg text-xs',
+      num: 'px-2 text-[12.5px]',
+      tag: 'px-1.5 text-[8.5px] tracking-wider',
+    },
+    md: {
+      box: 'h-11 rounded-xl text-[17px]',
+      num: 'px-3 text-[17px]',
+      tag: 'px-2 text-[10.5px] tracking-wider',
+    },
+    lg: {
+      box: 'h-12 rounded-2xl text-xl',
+      num: 'px-3.5 text-[19px]',
+      tag: 'px-2.5 text-[11.5px] tracking-wider',
+    },
+  }[size] ?? {
+    box: 'h-11 rounded-xl text-[17px]',
+    num: 'px-3 text-[17px]',
+    tag: 'px-2 text-[10.5px] tracking-wider',
+  }
+
   return (
-    <span className={`inline-flex shrink-0 items-center justify-center font-display font-bold text-white ${s}`} style={{ backgroundColor: warna ?? warnaTrayek(kode) }}>
-      <IsiNomor kode={kode} />
+    <span
+      className={`inline-flex shrink-0 items-center overflow-hidden font-display font-bold text-white shadow-xs ${s.box} ${className}`}
+      style={{ backgroundColor: bg }}
+      title={`Trayek lama ${n}`}
+    >
+      <span className={`inline-flex h-full items-center justify-center font-display font-bold ${s.num}`}>
+        {n}
+      </span>
+      <span className={`inline-flex h-full items-center justify-center border-l border-white/25 bg-black/20 font-sans font-bold uppercase text-white/95 ${s.tag}`}>
+        Lama
+      </span>
     </span>
   )
 }
 
 // Pil kecil "dulu 05": nomor lama yang masih dipakai warga & Moovit untuk trayek ini.
-export function PilWarga({ kode, lama = true, className = '' }) {
+export function PilWarga({ kode, lama = false, className = '' }) {
   if (trayekLama(kode) && !lama) return null
   if (trayekLama(kode))
     return (
       <span
         title="Trayek lama di luar SK 2017 yang masih beroperasi (Moovit & keterangan warga)"
-        className={`inline-flex shrink-0 items-center rounded-full bg-[#EEF0F3] px-1.5 py-px text-[11px] font-semibold whitespace-nowrap text-[#4A5563] ${className}`}
+        className={`inline-flex shrink-0 items-center rounded-full bg-[#FFF3D6] px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-[#8A5A00] border border-[#F3DFAC] ${className}`}
       >
         trayek lama
       </span>
@@ -164,7 +208,7 @@ export function PilWarga({ kode, lama = true, className = '' }) {
   return (
     <span
       title={`Warga & Moovit masih menyebutnya angkot ${w} (nomor sebelum rerouting 2017)`}
-      className={`inline-flex shrink-0 items-center rounded-full bg-[#FFF3D6] px-1.5 py-px text-[11px] font-semibold whitespace-nowrap text-[#8A5A00] ${className}`}
+      className={`inline-flex shrink-0 items-center rounded-full bg-[#FFF3D6] px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap text-[#8A5A00] border border-[#F3DFAC] ${className}`}
     >
       dulu {w}
     </span>

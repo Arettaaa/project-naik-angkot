@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TEMPAT } from '../../data/tempat'
 import { saranAwal, tempatSaya, useCariTempat, usePusatPeta, useTempatSaya } from '../hooks'
@@ -17,6 +17,7 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
   const [buka, setBuka] = useState(false)
   const [aktif, setAktif] = useState(0)
   const inputRef = useRef(null)
+  const containerRef = useRef(null)
 
   const dekat = usePusatPeta()
   const saya = useTempatSaya()
@@ -44,6 +45,22 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
     return [...tempat, ...rute, { jenis: 'peta' }]
   }, [q, trayek.data, cariTempat.hasil, saya])
 
+  // Tutup dropdown jika klik di luar container
+  useEffect(() => {
+    if (!buka) return
+
+    function handlePointerDown(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setBuka(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [buka])
+
   function pilih(s) {
     setBuka(false)
     inputRef.current?.blur()
@@ -61,7 +78,10 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
     if (e.key === 'ArrowDown') setAktif((i) => Math.min(i + 1, saran.length - 1))
     else if (e.key === 'ArrowUp') setAktif((i) => Math.max(i - 1, 0))
     else if (e.key === 'Enter' && saran[aktif]) pilih(saran[aktif])
-    else if (e.key === 'Escape') setBuka(false)
+    else if (e.key === 'Escape') {
+      setBuka(false)
+      inputRef.current?.blur()
+    }
     else return
     e.preventDefault()
   }
@@ -70,7 +90,7 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
   const adaRute = saran.some((s) => s.jenis === 'rute')
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <div className="flex gap-2">
         <label className="flex h-[52px] min-w-0 flex-1 items-center gap-3 rounded-2xl bg-white px-4 shadow-[0_8px_30px_rgba(21,30,44,0.14)] ring-primary/25 focus-within:ring-2">
           <IconSearch className="h-5 w-5 shrink-0 text-primary" />
@@ -83,7 +103,14 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
               setBuka(true)
             }}
             onFocus={() => setBuka(true)}
-            onBlur={() => setTimeout(() => setBuka(false), 150)}
+            onClick={() => {
+              if (!buka) setBuka(true)
+            }}
+            onBlur={(e) => {
+              if (e.relatedTarget && !containerRef.current?.contains(e.relatedTarget)) {
+                setBuka(false)
+              }
+            }}
             onKeyDown={tombol}
             placeholder="Mau ke mana hari ini?"
             aria-label="Cari tujuan atau nomor rute"
@@ -93,7 +120,16 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
             className="min-w-0 flex-1 bg-transparent text-[15px] font-medium text-dark outline-none placeholder:font-normal placeholder:text-dark/45"
           />
           {q && (
-            <button type="button" onClick={() => setQ('')} aria-label="Kosongkan" className="text-dark/40 hover:text-dark">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setQ('')
+                inputRef.current?.focus()
+              }}
+              aria-label="Kosongkan"
+              className="p-1 text-dark/40 hover:text-dark touch-manipulation cursor-pointer"
+            >
               <IconX className="h-4 w-4" />
             </button>
           )}
@@ -102,16 +138,18 @@ export default function CariTujuan({ trayek, onPilihRute, kanan }) {
       </div>
 
       {buka && (
-        <div id="naik-saran" role="listbox" className="naik-scroll absolute top-[60px] right-0 left-0 z-10 max-h-[60dvh] overflow-y-auto rounded-2xl bg-white py-2 shadow-[0_12px_36px_rgba(21,30,44,0.18)]">
+        <div id="naik-saran" role="listbox" className="naik-scroll absolute top-[60px] right-0 left-0 z-10 max-h-[60dvh] overflow-y-auto overscroll-contain rounded-2xl bg-white py-2 shadow-[0_12px_36px_rgba(21,30,44,0.18)]">
           {q.trim().length >= 2 && adaTempat && <p className="px-4 pt-1 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">Tempat</p>}
           {q.trim().length >= 2 && cariTempat.loading && !adaTempat && <p className="px-4 pt-1 pb-2 text-[13px] text-dark/50">Mencari tempat…</p>}
           {cariTempat.gagal && <p className="px-4 pt-1 pb-2 text-[13px] text-red-700">Pencarian tempat gagal (backend / internet). Pilih titiknya langsung di peta dulu ya.</p>}
           {cariTempat.siap && !cariTempat.gagal && !adaTempat && !adaRute && <p className="px-4 pt-1 pb-2 text-[13px] text-dark/55">Tempat tidak ditemukan. Coba kata lain, atau pilih titiknya langsung di peta.</p>}
           {saran.map((s, i) => {
-            const kelas = `flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${i === aktif ? 'bg-[#EEF6F3]' : 'hover:bg-[#F6F9F9]'}`
+            const kelas = `flex w-full items-center gap-3 px-4 py-2.5 text-left select-none touch-manipulation cursor-pointer transition ${
+              i === aktif ? 'bg-[#EEF6F3]' : 'hover:bg-[#F6F9F9] active:bg-[#E2F0EB]'
+            }`
             const judulRute = s.jenis === 'rute' && saran[i - 1]?.jenis !== 'rute'
             return (
-              <div key={s.jenis === 'peta' ? 'peta' : `${s.jenis}-${s.peran ?? ''}-${s.t.nama ?? s.t.kode_trayek}-${s.t.lat ?? ''}`}>
+              <div key={s.jenis === 'peta' ? 'peta' : `${s.jenis}-${s.peran ?? ''}-${s.t?.nama ?? s.t?.kode_trayek}-${s.t?.lat ?? ''}`}>
                 {q.trim().length < 2 && s.peran && s.peran !== saran[i - 1]?.peran && (s.peran === 'populer' || !['rumah', 'kampus', 'riwayat'].includes(saran[i - 1]?.peran)) && (
                   <p className="px-4 pt-1.5 pb-1.5 text-[11.5px] font-semibold tracking-wide text-dark/45 uppercase">{s.peran === 'populer' ? 'Tujuan populer' : 'Tersimpan & terakhir'}</p>
                 )}

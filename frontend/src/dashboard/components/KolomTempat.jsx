@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { saranAwal, teksJarak, useCariTempat, usePusatPeta, useTempatSaya } from '../hooks'
 import { IconCap, IconClock, IconHome, IconLocate, IconMap, IconPin, IconSignpost, IconX } from '../icons'
 
@@ -29,7 +29,9 @@ export function ItemTempat({ t, peran, aktif, judul, ...p }) {
       role="option"
       aria-selected={aktif}
       onMouseDown={(e) => e.preventDefault()}
-      className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${aktif ? 'bg-[#EEF6F3]' : 'hover:bg-[#F6F9F9]'}`}
+      className={`flex w-full items-center gap-3 px-4 py-2.5 text-left select-none touch-manipulation cursor-pointer transition ${
+        aktif ? 'bg-[#EEF6F3]' : 'hover:bg-[#F6F9F9] active:bg-[#E2F0EB]'
+      }`}
       {...p}
     >
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: g.bg, color: g.fg }}>
@@ -50,6 +52,7 @@ export default function KolomTempat({ titik, onPilih, onFocus, onLokasiSaya, onP
   const [buka, setBuka] = useState(false)
   const [aktif, setAktif] = useState(0)
   const ref = useRef(null)
+  const containerRef = useRef(null)
   const dekat = usePusatPeta()
   const saya = useTempatSaya()
   const { hasil, loading, siap, gagal } = useCariTempat(q, dekat)
@@ -62,17 +65,37 @@ export default function KolomTempat({ titik, onPilih, onFocus, onLokasiSaya, onP
     ...(onPilihPeta ? [{ peran: 'peta', judul: 'Pilih lewat peta' }] : []),
   ]
 
+  // Tutup dropdown jika pengguna klik/tap di luar area KolomTempat
+  useEffect(() => {
+    if (!buka) return
+
+    function handlePointerDown(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setBuka(false)
+        setQ('')
+        ref.current?.blur()
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [buka])
+
   function pilih(x) {
     setQ('')
     setBuka(false)
     ref.current?.blur()
-    if (x.peran === 'lokasi') return onLokasiSaya()
-    if (x.peran === 'peta') return onPilihPeta()
-    onPilih({ lat: x.t.lat, lng: x.t.lng, nama: x.t.nama, ket: x.t.ket ?? null })
+    if (x.peran === 'lokasi') return onLokasiSaya?.()
+    if (x.peran === 'peta') return onPilihPeta?.()
+    if (x.t) {
+      onPilih?.({ lat: x.t.lat, lng: x.t.lng, nama: x.t.nama, ket: x.t.ket ?? null })
+    }
   }
 
   return (
-    <div>
+    <div ref={containerRef} className="relative">
       <div className="flex h-11 items-center gap-2 rounded-xl border border-[#E3E8EA] bg-white px-3 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
         <input
           ref={ref}
@@ -80,19 +103,33 @@ export default function KolomTempat({ titik, onPilih, onFocus, onLokasiSaya, onP
           onChange={(e) => {
             setQ(e.target.value)
             setAktif(0)
+            if (!buka) setBuka(true)
           }}
           onFocus={() => {
             setBuka(true)
             onFocus?.()
             // di HP panel Cari pendek: geser kolom ke atas supaya daftar saran kelihatan
-            if (window.innerWidth < 1024) setTimeout(() => ref.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80)
+            if (window.innerWidth < 1024) setTimeout(() => ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 80)
           }}
-          onBlur={() => setTimeout(() => setBuka(false), 150)}
+          onClick={() => {
+            if (!buka) setBuka(true)
+          }}
+          onBlur={(e) => {
+            // Tutup hanya jika fokus berpindah keluar container (misal navigasi keyboard Tab)
+            if (e.relatedTarget && !containerRef.current?.contains(e.relatedTarget)) {
+              setBuka(false)
+              setQ('')
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') setAktif((i) => Math.min(i + 1, item.length - 1))
             else if (e.key === 'ArrowUp') setAktif((i) => Math.max(i - 1, 0))
             else if (e.key === 'Enter' && item[aktif]) pilih(item[aktif])
-            else if (e.key === 'Escape') ref.current?.blur()
+            else if (e.key === 'Escape') {
+              setBuka(false)
+              setQ('')
+              ref.current?.blur()
+            }
             else return
             e.preventDefault()
           }}
@@ -100,14 +137,23 @@ export default function KolomTempat({ titik, onPilih, onFocus, onLokasiSaya, onP
           className="min-w-0 flex-1 bg-transparent text-[14.5px] text-dark outline-none placeholder:text-dark/45"
         />
         {buka && q && (
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setQ('')} aria-label="Kosongkan" className="text-dark/40 hover:text-dark">
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setQ('')
+              ref.current?.focus()
+            }}
+            aria-label="Kosongkan"
+            className="p-1 text-dark/40 hover:text-dark touch-manipulation cursor-pointer"
+          >
             <IconX className="h-4 w-4" />
           </button>
         )}
       </div>
       {!buka && titik?.ket && <p className="mt-1 truncate px-1 text-[12px] text-dark/50">{titik.ket}</p>}
       {buka && item.length > 0 && (
-        <div role="listbox" className="naik-scroll mt-1.5 max-h-72 overflow-y-auto rounded-2xl border border-[#E3E8EA] bg-white py-1.5">
+        <div role="listbox" className="naik-scroll mt-1.5 max-h-72 overflow-y-auto overscroll-contain rounded-2xl border border-[#E3E8EA] bg-white py-1.5 shadow-md">
           {mengetik && loading && !hasil.length && <p className="px-4 py-2 text-[13px] text-dark/50">Mencari tempat…</p>}
           {mengetik && gagal && <p className="px-4 py-2 text-[13px] text-red-700">Pencarian gagal (backend / internet). Pilih lewat peta dulu ya.</p>}
           {mengetik && siap && !gagal && !hasil.length && <p className="px-4 py-2 text-[13px] text-dark/55">Tempat tidak ditemukan. Coba kata lain, atau pilih lewat peta.</p>}
