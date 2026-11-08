@@ -68,9 +68,15 @@ class AiRekomendasiController extends Controller
             LIMIT 15
         "));
 
-        // 2. Jika ada rute trayek spesifik yang sedang aktif ditinjau pengguna
-        if (!empty($input['kode_trayek'])) {
-            $kode = $this->spasialService->formatKodeTrayek($input['kode_trayek']);
+        // Deteksi apakah pesan menyebut nomor trayek secara langsung (mis. "angkot 03", "trayek 08", "rute 21")
+        $kodeTrayekInput = $input['kode_trayek'] ?? null;
+        if (empty($kodeTrayekInput) && preg_match('/\b(?:angkot|trayek|rute|nomor|no\.?)\s*(\d{1,2}[a-zA-Z]*)\b/i', $input['pesan'], $m)) {
+            $kodeTrayekInput = $m[1];
+        }
+
+        // 2. Jika ada rute trayek spesifik yang sedang aktif ditinjau atau disebut pengguna
+        if (!empty($kodeTrayekInput)) {
+            $kode = $this->spasialService->formatKodeTrayek($kodeTrayekInput);
             $context['kode_trayek_fokus'] = $kode;
             $context['poi_rekomendasi'] = $this->spasialService->getKoridorPoi($kode, 400, null, 15);
 
@@ -86,23 +92,38 @@ class AiRekomendasiController extends Controller
             $context['trayek_terkait'] = $ruteInfo;
         } elseif (!empty($input['lat']) && !empty($input['lon'])) {
             // 3. Jika lokasi koordinat pengguna diberikan
-            $context['poi_rekomendasi'] = $this->spasialService->getNearestPoi(
-                (float) $input['lat'],
-                (float) $input['lon'],
-                600,
-                12
-            );
+            $lat = (float) $input['lat'];
+            $lon = (float) $input['lon'];
+            $context['poi_rekomendasi'] = $this->spasialService->getNearestPoi($lat, $lon, 600, 12);
+
+            $nearestRoutes = array_map(function ($r) {
+                return (array) $r;
+            }, DB::select('
+                SELECT r.kode_trayek, r.arah, r.nama_trayek, r.asal, r.tujuan, r.lintasan
+                FROM naik.rute r
+                JOIN naik.rute_geometri g ON g.rute_id = r.rute_id
+                WHERE ST_DWithin(g.geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 500)
+                ORDER BY ST_Distance(g.geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography) ASC
+                LIMIT 3
+            ', [$lon, $lat, $lon, $lat]));
+
+            if (!empty($nearestRoutes)) {
+                $context['trayek_terkait'] = $nearestRoutes;
+            }
         } else {
-            // 4. Pencarian kata kunci POI dari isi pesan pertanyaan pengguna
+            // 4. Pencarian kata kunci POI & Rute dari isi pesan pertanyaan pengguna
+            $stopWords = ['dari', 'mau', 'yang', 'untuk', 'bisa', 'naik', 'angkot', 'trayek', 'rute', 'arah', 'kota', 'bogor', 'jalan', 'tempat', 'rekomendasi', 'dekat', 'sekitar', 'dong', 'berapa', 'tarif', 'lewat', 'mana'];
             $keywords = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($input['pesan']), -1, PREG_SPLIT_NO_EMPTY);
-            $significantWords = array_values(array_filter($keywords, fn($w) => mb_strlen($w) >= 4));
+            $significantWords = array_values(array_filter($keywords, fn($w) => mb_strlen($w) >= 3 && !in_array($w, $stopWords, true)));
 
             $matchedPoi = [];
             if (!empty($significantWords)) {
                 $conditions = [];
                 $bindings = [];
                 foreach (array_slice($significantWords, 0, 4) as $word) {
-                    $conditions[] = 'LOWER(nama_tempat) LIKE ? OR LOWER(alamat) LIKE ?';
+                    $conditions[] = 'LOWER(nama_tempat) LIKE ? OR LOWER(alamat) LIKE ? OR LOWER(kategori) LIKE ? OR LOWER(COALESCE(sub_kategori, \'\')) LIKE ?';
+                    $bindings[] = '%' . $word . '%';
+                    $bindings[] = '%' . $word . '%';
                     $bindings[] = '%' . $word . '%';
                     $bindings[] = '%' . $word . '%';
                 }
@@ -115,6 +136,29 @@ class AiRekomendasiController extends Controller
                 $matchedPoi = array_map(function ($p) {
                     return (array) $p;
                 }, DB::select($sql, $bindings));
+
+                $ruteConds = [];
+                $ruteBinds = [];
+                foreach (array_slice($significantWords, 0, 4) as $word) {
+                    $ruteConds[] = 'LOWER(COALESCE(lintasan, \'\')) LIKE ? OR LOWER(nama_trayek) LIKE ? OR LOWER(asal) LIKE ? OR LOWER(tujuan) LIKE ?';
+                    $ruteBinds[] = '%' . $word . '%';
+                    $ruteBinds[] = '%' . $word . '%';
+                    $ruteBinds[] = '%' . $word . '%';
+                    $ruteBinds[] = '%' . $word . '%';
+                }
+
+                $matchedRoutes = array_map(function ($r) {
+                    return (array) $r;
+                }, DB::select('
+                    SELECT kode_trayek, arah, nama_trayek, asal, tujuan, lintasan
+                    FROM naik.rute
+                    WHERE ' . implode(' OR ', $ruteConds) . '
+                    LIMIT 3
+                ', $ruteBinds));
+
+                if (!empty($matchedRoutes)) {
+                    $context['trayek_terkait'] = $matchedRoutes;
+                }
             }
 
             if (empty($matchedPoi)) {
@@ -126,6 +170,24 @@ class AiRekomendasiController extends Controller
                     ORDER BY poi_id ASC
                     LIMIT 10
                 '));
+            }
+
+            if (empty($context['trayek_terkait']) && !empty($matchedPoi[0]['poi_id'])) {
+                $nearPoiRoutes = array_map(function ($r) {
+                    return (array) $r;
+                }, DB::select('
+                    SELECT r.kode_trayek, r.arah, r.nama_trayek, r.asal, r.tujuan, r.lintasan
+                    FROM naik.rute r
+                    JOIN naik.rute_geometri g ON g.rute_id = r.rute_id
+                    JOIN naik.poi p ON p.poi_id = ?
+                    WHERE ST_DWithin(g.geom::geography, p.geom::geography, 600)
+                    ORDER BY ST_Distance(g.geom::geography, p.geom::geography) ASC
+                    LIMIT 2
+                ', [$matchedPoi[0]['poi_id']]));
+
+                if (!empty($nearPoiRoutes)) {
+                    $context['trayek_terkait'] = $nearPoiRoutes;
+                }
             }
 
             $context['poi_rekomendasi'] = $matchedPoi;

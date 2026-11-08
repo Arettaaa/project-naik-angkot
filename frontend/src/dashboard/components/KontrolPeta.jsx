@@ -11,12 +11,14 @@ const TOMBOL =
 export default function KontrolPeta() {
   const map = useMap()
   const [saya, setSaya] = useState(null)
-  const beranda = useLocation().pathname === '/peta'
+  const { pathname } = useLocation()
+  const beranda = pathname === '/peta'
+  const sedangDetailRute = /^\/rute\/[^/]+/.test(pathname)
   useMapEvents({ locationfound: (e) => setSaya(e.latlng) })
 
   return (
     <>
-      <Floating className={`right-3 bottom-24 flex-col gap-2 lg:bottom-4 ${beranda ? 'hidden lg:flex' : 'flex'}`}>
+      <Floating className={`right-3 bottom-38 flex-col gap-2 lg:bottom-20 ${sedangDetailRute ? 'lg:right-[396px]' : 'lg:right-3'} ${beranda ? 'hidden lg:flex' : 'flex'}`}>
         <button aria-label="Perbesar" className={`${TOMBOL} hidden lg:flex`} onClick={() => map.zoomIn()}>
           <IconPlus />
         </button>

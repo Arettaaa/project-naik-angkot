@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import adegan from '../assets/carakerja/adegan.svg'
 import jalur from '../assets/carakerja/jalur.svg'
 import kilau from '../assets/carakerja/kilau.svg'
 import langkah from '../data/langkah'
+import useScrollSteps from '../hooks/useScrollSteps'
 
 const JARAK_MUNCUL_PX = 40
 
@@ -100,42 +101,10 @@ function Sparkles() {
   )
 }
 
-// Kartu langkah muncul satu per satu (jeda 220 ms) begitu bagian ini terlihat. Tidak ada "scroll di tempat":
-// halaman tetap mengalir normal, jadi tidak terasa macet/ngelag.
-function useLangkahMuncul(ref, jumlah) {
-  const [n, setN] = useState(() => (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? jumlah : 0))
-  useEffect(() => {
-    const el = ref.current
-    if (!el || n >= jumlah) return
-    let timer
-    const io = new IntersectionObserver(
-      ([e]) => {
-        if (!e.isIntersecting) return
-        io.disconnect()
-        let i = 0
-        const lanjut = () => {
-          i += 1
-          setN(i)
-          if (i < jumlah) timer = setTimeout(lanjut, 220)
-        }
-        timer = setTimeout(lanjut, 150)
-      },
-      { threshold: 0.3 },
-    )
-    io.observe(el)
-    return () => {
-      io.disconnect()
-      clearTimeout(timer)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref, jumlah])
-  return n
-}
-
 export default function CaraKerja() {
   const sectionRef = useRef(null)
   const stepRefs = useRef([])
-  const visibleCount = useLangkahMuncul(sectionRef, langkah.length)
+  const visibleCount = useScrollSteps(sectionRef, stepRefs, langkah.length)
 
   return (
     <div

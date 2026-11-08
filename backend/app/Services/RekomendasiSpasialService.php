@@ -44,7 +44,7 @@ class RekomendasiSpasialService
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getKoridorPoi(string $kodeTrayek, int $radiusM = 300, ?string $kategori = null, int $limit = 30): array
+    public function getKoridorPoi(string $kodeTrayek, int $radiusM = 300, ?string $kategori = null, int $limit = 30, ?int $ruteId = null): array
     {
         $kode = $this->formatKodeTrayek($kodeTrayek);
         $radiusM = min(max($radiusM, 50), 1000);
@@ -65,6 +65,7 @@ class RekomendasiSpasialService
                 JOIN naik.rute_geometri g ON g.rute_id = r.rute_id
                 JOIN naik.poi p ON ST_DWithin(g.geom::geography, p.geom::geography, ?)
                 WHERE r.kode_trayek = ?
+                  AND (?::int IS NULL OR r.rute_id = ?)
                   AND (?::text IS NULL OR p.kategori = ?)
                 GROUP BY p.nama_tempat, p.kategori, p.geom
             )
@@ -76,7 +77,7 @@ class RekomendasiSpasialService
             LIMIT ?
         ";
 
-        $rows = DB::select($sql, [$radiusM, $kode, $kategori, $kategori, $limit]);
+        $rows = DB::select($sql, [$radiusM, $kode, $ruteId, $ruteId, $kategori, $kategori, $limit]);
 
         return array_map(function ($row) {
             return [

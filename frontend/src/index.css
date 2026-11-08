@@ -330,18 +330,6 @@ html {
     stroke-dasharray: 1 5.5;
     stroke-width: 2;
   }
-
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cara-kerja-step,
-  .cara-kerja-line,
-  .cara-kerja-dot,
-  .cara-kerja-route {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
 }
 
 body {

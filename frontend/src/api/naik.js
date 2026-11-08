@@ -10,6 +10,20 @@ async function get(path, params) {
   return data
 }
 
+async function post(path, body) {
+  const res = await fetch(BASE + path, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body ?? {}),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(data?.message || `Gagal memproses permintaan (${res.status})`)
+  return data
+}
+
 export const api = {
   trayek: () => get('/trayek'),
   detailTrayek: (kode) => get(`/trayek/${encodeURIComponent(kode)}`),
@@ -26,4 +40,6 @@ export const api = {
       tujuan: `${tujuan.lat},${tujuan.lng}`,
       radius,
     }),
+  rekomendasiKoridor: (kode, params) => get(`/rekomendasi/koridor/${encodeURIComponent(kode)}`, params),
+  aiRekomendasi: (payload) => post('/ai/rekomendasi', payload),
 }

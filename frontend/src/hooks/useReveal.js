@@ -5,7 +5,7 @@ import { useEffect } from 'react'
 export default function useReveal(rootRef) {
   useEffect(() => {
     const root = rootRef.current
-    if (!root || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (!root) return
 
     const els = [...root.querySelectorAll('[data-muncul]')]
     els.forEach((el) => {

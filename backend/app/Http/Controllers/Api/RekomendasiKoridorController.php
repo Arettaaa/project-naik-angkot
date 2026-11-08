@@ -43,6 +43,7 @@ class RekomendasiKoridorController extends Controller
             'radius' => 'nullable|integer|min:50|max:1000',
             'limit' => 'nullable|integer|min:1|max:100',
             'kategori' => 'nullable|string|in:' . implode(',', self::ALLOWED_KATEGORI),
+            'rute_id' => 'nullable|integer|min:1',
         ]);
 
         if ($validator->fails()) {
@@ -55,12 +56,14 @@ class RekomendasiKoridorController extends Controller
         $radius = (int) $request->query('radius', 300);
         $limit = (int) $request->query('limit', 30);
         $kategori = $request->query('kategori');
+        $ruteId = $request->query('rute_id') !== null ? (int) $request->query('rute_id') : null;
 
         $poi = $this->spasialService->getKoridorPoi(
             $trayek->kode_trayek,
             $radius,
             $kategori,
-            $limit
+            $limit,
+            $ruteId
         );
 
         return response()->json([

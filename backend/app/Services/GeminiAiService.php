@@ -165,35 +165,79 @@ Hasilkan jawaban dalam format JSON persis dengan skema berikut:
      */
     private function fallbackOfflineResponse(string $pesan, array $context): array
     {
-        $trayekPertama = (array) ($context['trayek_terkait'][0] ?? $context['trayek_populer'][0] ?? []);
+        $trayekList = $context['trayek_terkait'] ?? [];
+        if (empty($trayekList) && !empty($context['daftar_trayek_resmi'])) {
+            $trayekList = array_slice($context['daftar_trayek_resmi'], 0, 2);
+        }
+
         $poiPilihan = array_slice($context['poi_rekomendasi'] ?? [], 0, 3);
-
-        $kode = $trayekPertama['kode_trayek'] ?? 'Trayek 08';
-        $namaTrayek = $trayekPertama['nama_trayek'] ?? 'Taman Pajajaran – Terminal Merdeka';
-        $arah = $trayekPertama['asal'] ?? 'Pusat Kota';
-
         $tempatPertama = (array) ($poiPilihan[0] ?? []);
-        $namaTujuan = $tempatPertama['nama'] ?? 'tujuan Anda';
+        $namaTujuan = $tempatPertama['nama'] ?? 'tujuan kamu';
+
+        $rekomendasiAngkot = [];
+        $seenKode = [];
+        foreach ($trayekList as $item) {
+            $r = (array) $item;
+            $kode = $r['kode_trayek'] ?? 'Trayek 08';
+            if (isset($seenKode[$kode])) {
+                continue;
+            }
+            $seenKode[$kode] = true;
+            $asal = $r['asal'] ?? 'Titik Keberangkatan';
+            $tujuan = $r['tujuan'] ?? 'Titik Akhir';
+            $arah = $r['arah'] ?? "{$asal} – {$tujuan}";
+
+            $rekomendasiAngkot[] = [
+                'kode_trayek' => $kode,
+                'arah' => $arah,
+                'titik_naik' => $asal,
+                'titik_turun' => $tempatPertama['nama'] ?? $tujuan,
+                'tarif' => (int) ($r['tarif'] ?? 5000),
+            ];
+            if (count($rekomendasiAngkot) >= 2) {
+                break;
+            }
+        }
+
+        if (empty($rekomendasiAngkot)) {
+            $rekomendasiAngkot[] = [
+                'kode_trayek' => 'Trayek 08',
+                'arah' => 'Taman Pajajaran – Terminal Merdeka',
+                'titik_naik' => 'Halte / Titik Lintasan Terdekat',
+                'titik_turun' => $namaTujuan,
+                'tarif' => 5000,
+            ];
+        }
+
+        $utama = $rekomendasiAngkot[0];
+        $kodeUtama = $utama['kode_trayek'];
+        $arahUtama = $utama['arah'];
+        $tambahanTeks = isset($rekomendasiAngkot[1])
+            ? " atau alternatif **{$rekomendasiAngkot[1]['kode_trayek']}** ({$rekomendasiAngkot[1]['arah']})"
+            : '';
+
+        $narasi = "Halo! Berdasarkan data jalur angkot Kota Bogor, kamu bisa naik **{$kodeUtama}** jurusan **{$arahUtama}**{$tambahanTeks}. Tarif flat angkot resmi di Kota Bogor adalah **Rp 5.000** per orang sekali jalan.";
+        if (!empty($tempatPertama['nama'])) {
+            $narasi .= " Di sepanjang jalur ini, kamu juga bisa singgah di sekitar **{$tempatPertama['nama']}**.";
+        }
 
         return [
             'status' => 'success',
             'mode' => 'local_fallback',
-            'narasi' => "Halo! Untuk rute perjalanan ini, kamu bisa naik **{$kode}** ({$namaTrayek}). Tarif flat angkot resmi Bogor adalah Rp 5.000 per orang. Kamu bisa turun di patokan terdekat menuju {$namaTujuan}.",
-            'rekomendasi_angkot' => [
-                [
-                    'kode_trayek' => $kode,
-                    'arah' => $arah,
-                    'titik_naik' => 'Halte / Titik Lintasan Terdekat',
-                    'titik_turun' => $tempatPertama['nama'] ?? 'Titik Tujuan',
-                    'tarif' => 5000,
-                ],
-            ],
+            'narasi' => $narasi,
+            'rekomendasi_angkot' => $rekomendasiAngkot,
             'tempat_singgah' => array_map(function ($p) {
                 $p = (array) $p;
+                $alamat = !empty($p['alamat']) ? " ({$p['alamat']})" : '';
+                $jarak = isset($p['jarak_ke_jalur_m'])
+                    ? "Berjarak ±{$p['jarak_ke_jalur_m']} m dari jalur angkot{$alamat}."
+                    : (isset($p['jarak_m'])
+                        ? "Berjarak ±{$p['jarak_m']} m dari lokasimu{$alamat}."
+                        : "Berada di koridor rute angkot Kota Bogor{$alamat}.");
                 return [
                     'nama' => $p['nama'] ?? 'Tempat Menarik',
                     'kategori' => $p['kategori'] ?? 'wisata',
-                    'alasan' => 'Dapat dijangkau dengan mudah dari koridor rute ini.',
+                    'alasan' => $jarak,
                 ];
             }, $poiPilihan),
         ];

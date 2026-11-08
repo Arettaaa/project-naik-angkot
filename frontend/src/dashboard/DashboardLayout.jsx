@@ -7,6 +7,7 @@ import { DashboardCtx } from './context'
 import RailMenu from './components/RailMenu'
 import KontrolPeta from './components/KontrolPeta'
 import BatasKota from './components/BatasKota'
+import AiChatbot from '../components/AiChatbot'
 import { warnaTrayek } from './warna'
 import './dashboard.css'
 
@@ -127,6 +128,7 @@ export default function DashboardLayout() {
           <BatasKota />
           <RailMenu />
           <KontrolPeta />
+          <AiChatbot />
           <Outlet />
         </MapContainer>
       </div>

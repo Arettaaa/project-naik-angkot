@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useMap } from 'react-leaflet'
+import { CircleMarker, Tooltip, useMap } from 'react-leaflet'
 import { api } from '../../api/naik'
 import useApi from '../../hooks/useApi'
 import { useDashboard } from '../context'
@@ -45,9 +45,11 @@ export default function RutePanel() {
   const detail = useApi(kode ? () => api.detailTrayek(kode) : null, [kode])
   const arahDetail = detail.data?.rute.find((r) => r.rute_id === dipilih?.properties.rute_id)
   const [titikAktif, setTitikAktif] = useState(null)
+  const [poiAktif, setPoiAktif] = useState(null)
 
   useEffect(() => {
     setTitikAktif(null)
+    setPoiAktif(null)
   }, [kodePenuh, ruteId])
 
   // Reset simulasi saat ganti rute/trayek
@@ -126,12 +128,36 @@ export default function RutePanel() {
             setSimulasiAktif(false)
             paskan()
           }}
-          onPilihTitik={(idx) => setTitikAktif({ idx, n: Date.now() })}
+          onPilihTitik={(idx) => {
+            setPoiAktif(null)
+            setTitikAktif({ idx, n: Date.now() })
+          }}
+          poiAktifId={poiAktif?.poi_id}
+          onPilihPoi={(poi) => {
+            setTitikAktif(null)
+            setPoiAktif(poi)
+            if (poi?.koordinat?.lat != null && poi?.koordinat?.lon != null) {
+              map.flyTo([poi.koordinat.lat, poi.koordinat.lon], Math.max(map.getZoom(), 16), { duration: 0.5 })
+            }
+          }}
           onTampilkan={() => {
             setSimulasiAktif(false)
+            setPoiAktif(null)
             paskan()
           }}
         />
+      )}
+
+      {poiAktif?.koordinat?.lat != null && poiAktif?.koordinat?.lon != null && (
+        <CircleMarker
+          center={[poiAktif.koordinat.lat, poiAktif.koordinat.lon]}
+          radius={9}
+          pathOptions={{ color: '#fff', weight: 3, fillColor: '#1A936F', fillOpacity: 1 }}
+        >
+          <Tooltip permanent direction="top" offset={[0, -10]} className="naik-tag-jalan font-semibold">
+            {poiAktif.nama}
+          </Tooltip>
+        </CircleMarker>
       )}
 
       {dipilih && !simulasiAktif && <ChipRute rute={dipilih.properties} />}
