@@ -384,7 +384,12 @@ class TrayekController extends Controller
         $b1 = $terbaik(1);
         $b2 = $terbaik(2);
         $grup[1] = array_slice($grup[1], 0, 5);
-        $grup[2] = array_slice(array_values(array_filter($grup[2], fn ($o) => $o['skor'] <= $b1 + 10)), 0, 5);
+        // jalan kaki total sebuah opsi; kalau angkot langsung terbaik menyuruh jalan jauh (>= 600 m), opsi pindah
+        // yang jalan kakinya jauh lebih sedikit tetap ditampilkan walau lebih lama
+        $jalan = fn ($o) => array_sum(array_map(fn ($e) => $e['d1'] + $e['d2'], $o['leg']));
+        $jalanB1 = $grup[1] ? $jalan(array_reduce($grup[1], fn ($c, $o) => $c === null || $o['skor'] < $c['skor'] ? $o : $c)) : 0;
+        $grup[2] = array_slice(array_values(array_filter($grup[2],
+            fn ($o) => $o['skor'] <= $b1 + 10 || ($jalanB1 >= 600 && $jalan($o) <= 0.6 * $jalanB1))), 0, 5);
         $grup[3] = array_slice(array_values(array_filter($grup[3],
             fn ($o) => (!$grup[1] && !$grup[2]) || $o['skor'] <= min($b1, $b2) - 5)), 0, 3);
         // opsi paling cepat (menit asli) selalu ikut tampil walau jalan kakinya jauh, biar pengguna bisa memilih

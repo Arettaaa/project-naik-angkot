@@ -203,13 +203,16 @@ class PencariRuteDijkstra
                 $root = array_slice($prev, 0, $i);
                 $spur = $i === 0 ? 'O' : $this->sisi[$prev[$i - 1]]['v'];
 
-                // buang sisi dari spur node yang trayeknya sudah dipakai rute lain dengan root yang sama
+                // buang sisi dari spur node yang trayeknya sudah dipakai rute lain dengan root yang sama.
+                // Kalau sisi itu langsung ke tujuan (D), hanya sisi langsungnya yang dibuang, supaya trayek
+                // yang sama masih bisa dipakai sebagai angkot pertama dalam rute pindah.
                 $buangSisi = [];
                 foreach ($A as $p) {
                     if (count($p['sisi']) > $i && array_slice($p['sisi'], 0, $i) === $root) {
-                        $kodeDipakai = $this->sisi[$p['sisi'][$i]]['kode'];
+                        $dipakai = $this->sisi[$p['sisi'][$i]];
                         foreach ($this->keluar[$spur] ?? [] as $id) {
-                            if ($this->sisi[$id]['kode'] === $kodeDipakai) {
+                            $e = $this->sisi[$id];
+                            if ($e['kode'] === $dipakai['kode'] && ($dipakai['v'] !== 'D' || $e['v'] === 'D')) {
                                 $buangSisi[$id] = true;
                             }
                         }
