@@ -67,8 +67,8 @@ class PoiController extends Controller
 
         $poi = $this->coba(fn () => DB::selectOne("
             SELECT nama_tempat AS nama, alamat FROM naik.poi
-            WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 35)
-            ORDER BY bobot DESC, geom <-> ST_SetSRID(ST_MakePoint(?, ?), 4326) LIMIT 1", [$lng, $lat, $lng, $lat]));
+            WHERE ST_DWithin(geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, 25)
+            ORDER BY geom <-> ST_SetSRID(ST_MakePoint(?, ?), 4326) LIMIT 1", [$lng, $lat, $lng, $lat]));  // tempat paling dekat dengan pin
 
         $a = $this->reverseNominatim($lat, $lng) ?? $this->reverseDatabase($lat, $lng);
         $jalan = trim(($a['jalan'] ?? '') . (!empty($a['nomor']) ? ' No. ' . $a['nomor'] : ''));

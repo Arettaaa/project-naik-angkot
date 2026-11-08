@@ -23,7 +23,7 @@ export default function KontrolPeta() {
         <button aria-label="Perkecil" className={`${TOMBOL} hidden lg:flex`} onClick={() => map.zoomOut()}>
           <IconMinus />
         </button>
-        <button aria-label="Lokasi saya" className={`${TOMBOL} lg:mt-2`} onClick={() => map.locate({ setView: true, maxZoom: 16 })}>
+        <button aria-label="Lokasi saya" className={`${TOMBOL} lg:mt-2`} onClick={() => map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true })}>
           <IconLocate />
         </button>
       </Floating>

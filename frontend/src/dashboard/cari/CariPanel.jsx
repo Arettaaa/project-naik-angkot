@@ -6,6 +6,7 @@ import L from 'leaflet'
 import { api } from '../../api/naik'
 import KolomTempat from '../components/KolomTempat'
 import PinPeta from './PinPeta'
+import { AKURAT_M, ambilLokasi } from './lokasi'
 import { tempatSaya, useLayarBesar, useTempatSaya } from '../hooks'
 import { jarak, menitAngkot, menitJalan, nomor, rupiah } from '../../utils/format'
 import { useDashboard } from '../context'
@@ -81,7 +82,9 @@ export default function CariPanel() {
   const [detailBuka, setDetailBuka] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024)
   const [panelCariBuka, setPanelCariBuka] = useState(true)
   const [lokasiErr, setLokasiErr] = useState('')
-  const [pin, setPin] = useState(null) // 'asal' | 'tujuan' saat memilih lewat pin geser
+  const [pin, setPin] = useState(null) // { jenis: 'asal'|'tujuan', awal?, gps? } saat memilih lewat pin
+  const [cariLokasi, setCariLokasi] = useState(false)
+  const [lokasiKurang, setLokasiKurang] = useState(null) // { jenis, akurasi } kalau GPS otomatis kurang tepat
   const [navigasiAktif, setNavigasiAktif] = useState(false)
   const [activeStepNav, setActiveStepNav] = useState(0)
   const besar = useLayarBesar()
@@ -99,9 +102,9 @@ export default function CariPanel() {
       lokasiSaya()
       return
     }
-    if (params.get('pin') === 'tujuan' || params.get('pin') === 'asal') setPin(params.get('pin'))
+    if (params.get('pin') === 'tujuan' || params.get('pin') === 'asal') bukaPin(params.get('pin'))
     // asal otomatis = lokasi saya (diam-diam; kalau ditolak, pengguna isi sendiri)
-    if (!asal) lokasiSaya({ diam: true })
+    if (!asal) lokasiSaya('asal', { diam: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
   // sekali pilih langsung dicari: begitu asal & tujuan terisi, tanpa perlu tekan tombol
@@ -134,11 +137,14 @@ export default function CariPanel() {
       .catch(() => {})
   }
 
+  function bukaPin(jenis, awal = null, gps = null) {
+    setLokasiErr('')
+    setPin({ jenis, awal, gps })
+  }
+
+  // ketuk peta tidak langsung mengganti titik (sering tidak sengaja): buka pin di titik itu untuk dicek dulu
   function klikPeta(latlng) {
-    const t = { lat: +latlng.lat.toFixed(6), lng: +latlng.lng.toFixed(6), nama: 'Memuat alamat…' }
-    setTitik(mode, t)
-    isiAlamat(mode, t)
-    if (mode === 'asal' && !tujuan) setMode('tujuan')
+    bukaPin(mode, { lat: latlng.lat, lng: latlng.lng })
   }
 
   function pilihTempat(jenis, t) {
@@ -147,19 +153,23 @@ export default function CariPanel() {
     if (jenis === 'asal' && !tujuan) setMode('tujuan')
   }
 
-  function lokasiSaya({ diam = false } = {}) {
+  // GPS akurasi tinggi. Kalau kurang tepat dan pengguna sendiri yang minta, langsung buka pin
+  // di posisi GPS supaya bisa digeser ke tempat yang sebenarnya.
+  function lokasiSaya(jenis = 'asal', { diam = false } = {}) {
     setLokasiErr('')
-    if (!navigator.geolocation) return !diam && setLokasiErr('Browser tidak mendukung lokasi.')
-    navigator.geolocation.getCurrentPosition(
-      (p) => {
-        const t = { lat: +p.coords.latitude.toFixed(6), lng: +p.coords.longitude.toFixed(6), nama: 'Lokasi saya' }
-        setTitik('asal', t)
-        isiAlamat('asal', t, false)
-        setMode('tujuan')
-      },
-      () => !diam && setLokasiErr('Izin lokasi ditolak / tidak tersedia. Ketik atau pilih lewat peta ya.'),
-      { enableHighAccuracy: true, timeout: 10000 },
-    )
+    setLokasiKurang(null)
+    setCariLokasi(true)
+    ambilLokasi({ maksMs: diam ? 5000 : 8000 })
+      .then((g) => {
+        if (!diam && g.akurasi > AKURAT_M) return bukaPin(jenis, g, g)
+        const t = { lat: g.lat, lng: g.lng, nama: 'Lokasi saya' }
+        setTitik(jenis, t)
+        isiAlamat(jenis, t, false)
+        if (g.akurasi > AKURAT_M) setLokasiKurang({ jenis, akurasi: g.akurasi, g })
+        if (jenis === 'asal') setMode('tujuan')
+      })
+      .catch((e) => !diam && setLokasiErr(e.message))
+      .finally(() => setCariLokasi(false))
   }
 
   async function cari() {
@@ -219,8 +229,8 @@ export default function CariPanel() {
           aktif={mode === 'asal'}
           onAktif={() => setMode('asal')}
           onPilih={(t) => pilihTempat('asal', t)}
-          onLokasiSaya={() => lokasiSaya()}
-          onPilihPeta={() => setPin('asal')}
+          onLokasiSaya={() => lokasiSaya('asal')}
+          onPilihPeta={() => bukaPin('asal')}
         />
         <div className="my-2 flex justify-center">
           <button
@@ -242,9 +252,30 @@ export default function CariPanel() {
           aktif={mode === 'tujuan'}
           onAktif={() => setMode('tujuan')}
           onPilih={(t) => pilihTempat('tujuan', t)}
-          onPilihPeta={() => setPin('tujuan')}
+          onLokasiSaya={() => lokasiSaya('tujuan')}
+          onPilihPeta={() => bukaPin('tujuan')}
         />
+        {cariLokasi && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-[#2F80ED]" role="status">
+            <span className="h-2 w-2 animate-ping rounded-full bg-[#2F80ED]" /> Mencari lokasi kamu…
+          </p>
+        )}
         {lokasiErr && <p className="mt-2 text-xs text-red-700">{lokasiErr}</p>}
+        {lokasiKurang && !cariLokasi && (
+          <p className="mt-2 rounded-lg bg-[#EEF3FE] px-2.5 py-1.5 text-[12px] leading-snug text-[#1E3A8A]">
+            Lokasi kamu kurang tepat (±{lokasiKurang.akurasi} m).{' '}
+            <button
+              onClick={() => {
+                const t = lokasiKurang.jenis === 'asal' ? asal : tujuan
+                bukaPin(lokasiKurang.jenis, t, lokasiKurang.g)
+                setLokasiKurang(null)
+              }}
+              className="font-semibold underline"
+            >
+              Betulkan di peta
+            </button>
+          </p>
+        )}
 
         {hasil.loading && (
           <p className="mt-3 flex items-center justify-center gap-2 text-[12.5px] font-semibold text-primary" role="status">
@@ -254,7 +285,7 @@ export default function CariPanel() {
         )}
         {(!asal || !tujuan) && (
           <p className="mt-2 text-center text-[11px] sm:text-xs text-dark/50 leading-relaxed">
-            Ketik nama tempat, pilih lewat peta, atau klik peta untuk mengisi titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
+            Ketik nama tempat, pilih lewat peta, atau ketuk peta untuk memilih titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
           </p>
         )}
 
@@ -285,18 +316,22 @@ export default function CariPanel() {
     : [asal, tujuan].filter(Boolean).map((t) => [t.lat, t.lng])
 
   if (pin) {
-    const awal = (pin === 'asal' ? asal : tujuan) ?? (pin === 'tujuan' ? asal : tujuan)
+    const j = pin.jenis
+    const awal = pin.awal ?? (j === 'asal' ? asal : tujuan) ?? (j === 'tujuan' ? asal : tujuan)
     return (
       <>
-        {pin !== 'asal' && asal && <Penanda titik={asal} warna={WARNA_ASAL} label="Asal" />}
-        {pin !== 'tujuan' && tujuan && <Penanda titik={tujuan} warna={WARNA_TUJUAN} label="Tujuan" />}
+        {j !== 'asal' && asal && <Penanda titik={asal} warna={WARNA_ASAL} label="Asal" />}
+        {j !== 'tujuan' && tujuan && <Penanda titik={tujuan} warna={WARNA_TUJUAN} label="Tujuan" />}
         <PinPeta
-          label={pin}
-          warna={pin === 'asal' ? WARNA_ASAL : WARNA_TUJUAN}
+          key={`${j}-${awal?.lat}-${awal?.lng}`}
+          label={j}
+          warna={j === 'asal' ? WARNA_ASAL : WARNA_TUJUAN}
           awal={awal}
+          gps={pin.gps}
           onBatal={() => setPin(null)}
           onPilih={(t) => {
-            pilihTempat(pin, t)
+            pilihTempat(j, t)
+            setLokasiKurang(null)
             setPin(null)
           }}
         />
@@ -403,7 +438,7 @@ export default function CariPanel() {
       {!navigasiAktif && (besar || !(opsi && detailBuka)) && !(!besar && panelCariBuka && hasil.data) && (
         <Floating className="bottom-24 left-1/2 -translate-x-1/2 lg:bottom-4">
           <p className="rounded-full bg-white px-4 py-2 text-[13px] font-semibold whitespace-nowrap shadow-[0_8px_30px_rgba(21,30,44,0.14)]">
-            Klik peta untuk mengisi{' '}
+            Ketuk peta untuk memilih{' '}
             <span style={{ color: mode === 'asal' ? WARNA_ASAL : WARNA_TUJUAN }}>{mode === 'asal' ? 'ASAL' : 'TUJUAN'}</span>
           </p>
         </Floating>
