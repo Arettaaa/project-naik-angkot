@@ -12,8 +12,9 @@ use SplPriorityQueue;
  *   - Node   : titik pindah (naik.titik_transfer), ditambah node asal "O" dan tujuan "D".
  *   - Sisi   : satu kali naik angkot pada satu rute (trayek + arah) dari titik i ke titik j yang
  *              dilewati SETELAH i (searah jalur angkot). Bobot sisi =
- *                  jalan kaki ke jalur / 75 + tunggu 5 + jarak naik / 250 + jalan kaki dari jalur / 75
- *              (jalan kaki 4,5 km/jam, angkot 15 km/jam, tunggu 5 menit tiap naik angkot).
+ *                  2 x (jalan kaki ke jalur + jalan kaki dari jalur) / 75 + tunggu 5 + jarak naik / 250
+ *              (jalan kaki 4,5 km/jam, angkot 15 km/jam, tunggu 5 menit tiap naik angkot). Menit jalan kaki
+ *              dihitung 2x lipat supaya rute tidak menyuruh jalan jauh; waktu yang ditampilkan tetap waktu asli.
  *              Sisi dari "O" = naik di jalur terdekat dari asal; sisi ke "D" = turun di jalur terdekat
  *              dari tujuan. Jalur trayek TIDAK diubah: yang dicari hanya kombinasi naik-turun-pindah.
  *   - Batas  : maksimal 3 angkot (2x pindah), tidak boleh lanjut dengan trayek yang sama.
@@ -30,6 +31,7 @@ class PencariRuteDijkstra
     public const PINDAH = 250.0;    // jarak maks titik pindah ke jalur (m)
     public const MIN_NAIK = 300.0;  // naik angkot kurang dari ini mending jalan kaki (kecuali angkot langsung)
     public const MAKS_ANGKOT = 3;
+    public const BOBOT_JALAN = 2.0; // 1 menit jalan kaki "terasa" seperti 2 menit (umum di perencana rute transit)
 
     /** @var array<int, array> */
     private array $sisi = [];
@@ -38,6 +40,7 @@ class PencariRuteDijkstra
     private array $rute = [];       // rute_id => [kode, arah, nama, len]
     public int $jumlahDijkstra = 0;
     public int $maksAngkot = self::MAKS_ANGKOT;
+    public string $bobot = 'w';     // 'w' = bobot dengan jalan kaki x2, 'menit' = waktu asli (untuk opsi tercepat)
 
     public function __construct(private array $a, private array $b, private float $rad)
     {
@@ -88,7 +91,8 @@ class PencariRuteDijkstra
         // PERTAMA dalam rute pindah (sudah sampai dengan satu angkot, tidak perlu turun lalu pindah).
         $langsung = [];
         foreach ($ra as $x) {
-            if (isset($diB[$x->rute_id]) && $diB[$x->rute_id]->f > $x->f) {
+            if (isset($diB[$x->rute_id]) && $diB[$x->rute_id]->f > $x->f
+                && ($diB[$x->rute_id]->f - $x->f) * ($this->rute[$x->rute_id][3] ?? 0) >= self::MIN_NAIK) {
                 $y = $diB[$x->rute_id];
                 $this->tambahSisi('O', 'D', $x->rute_id, (float) $x->f, (float) $y->f, (float) $x->d, (float) $y->d);
                 $langsung[$x->rute_id] = true;
@@ -123,7 +127,8 @@ class PencariRuteDijkstra
         $this->sisi[$id] = [
             'u' => $u, 'v' => $v, 'rute' => $rid, 'kode' => $this->rute[$rid][0],
             'f1' => $f1, 'f2' => $f2, 'd1' => $d1, 'd2' => $d2, 'naik' => $naik,
-            'w' => $d1 / self::JALAN + self::TUNGGU + $naik / self::ANGKOT + $d2 / self::JALAN,
+            'menit' => ($d1 + $d2) / self::JALAN + self::TUNGGU + $naik / self::ANGKOT,   // waktu asli
+            'w' => self::BOBOT_JALAN * ($d1 + $d2) / self::JALAN + self::TUNGGU + $naik / self::ANGKOT,  // bobot Dijkstra
         ];
         $this->keluar[$u][] = $id;
     }
@@ -167,7 +172,7 @@ class PencariRuteDijkstra
                     continue;
                 }
                 $kv = "{$e['v']}|" . ($k + 1) . "|{$e['kode']}";
-                $nd = $du + $e['w'];
+                $nd = $du + $e[$this->bobot];
                 if ($nd < ($jarak[$kv] ?? INF)) {
                     $jarak[$kv] = $nd;
                     $dari[$kv] = [$key, $id];
@@ -219,7 +224,7 @@ class PencariRuteDijkstra
 
                 $biayaRoot = 0.0;
                 foreach ($root as $id) {
-                    $biayaRoot += $this->sisi[$id]['w'];
+                    $biayaRoot += $this->sisi[$id][$this->bobot];
                 }
                 $kode0 = $i > 0 ? $this->sisi[$prev[$i - 1]]['kode'] : null;
                 $s = $this->dijkstra($spur, $i, $kode0, $buangSisi, $buangNode);

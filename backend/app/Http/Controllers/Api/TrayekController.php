@@ -342,6 +342,14 @@ class TrayekController extends Controller
                 $hasilYen[] = $p;
             }
         }
+        // satu Dijkstra lagi dengan bobot waktu asli: opsi paling cepat walau jalan kakinya jauh
+        $g->bobot = 'menit';
+        $cepat = $g->dijkstra('O');
+        $g->bobot = 'w';
+        if ($cepat) {
+            $hasilYen[] = ['biaya' => array_sum(array_map(fn ($id) => $g->sisi($id)['w'], $cepat[1])), 'sisi' => $cepat[1]];
+        }
+        usort($hasilYen, fn ($x, $y) => $x['biaya'] <=> $y['biaya']);
 
         // waktu angkot langsung per rute: rute pindah yang angkot terakhirnya rute ini hanya dipakai kalau
         // memang lebih cepat (mis. naik angkot lain dulu supaya jalan kaki ke rute itu lebih dekat)
@@ -364,7 +372,7 @@ class TrayekController extends Controller
                 continue;
             }
             $urutanKode[$kunci] = true;
-            $opsi[] = ['menit' => $p['biaya'], 'leg' => $leg];
+            $opsi[] = ['skor' => $p['biaya'], 'menit' => array_sum(array_column($leg, 'menit')), 'leg' => $leg];
         }
 
         // pilih yang ditampilkan: pindah hanya kalau waktunya bersaing
@@ -372,13 +380,22 @@ class TrayekController extends Controller
         foreach ($opsi as $o) {
             $grup[count($o['leg'])][] = $o;
         }
-        $terbaik = fn ($n) => $grup[$n] ? min(array_column($grup[$n], 'menit')) : INF;
+        $terbaik = fn ($n) => $grup[$n] ? min(array_column($grup[$n], 'skor')) : INF;
         $b1 = $terbaik(1);
         $b2 = $terbaik(2);
         $grup[1] = array_slice($grup[1], 0, 5);
-        $grup[2] = array_slice(array_values(array_filter($grup[2], fn ($o) => $o['menit'] <= $b1 + 5)), 0, 5);
+        $grup[2] = array_slice(array_values(array_filter($grup[2], fn ($o) => $o['skor'] <= $b1 + 10)), 0, 5);
         $grup[3] = array_slice(array_values(array_filter($grup[3],
-            fn ($o) => (!$grup[1] && !$grup[2]) || $o['menit'] <= min($b1, $b2) - 5)), 0, 3);
+            fn ($o) => (!$grup[1] && !$grup[2]) || $o['skor'] <= min($b1, $b2) - 5)), 0, 3);
+        // opsi paling cepat (menit asli) selalu ikut tampil walau jalan kakinya jauh, biar pengguna bisa memilih
+        if ($opsi) {
+            $cepat = array_reduce($opsi, fn ($c, $o) => $c === null || $o['menit'] < $c['menit'] ? $o : $c);
+            $n = count($cepat['leg']);
+            if (!in_array($cepat, $grup[$n], true)) {
+                $grup[$n][] = $cepat;
+                usort($grup[$n], fn ($x, $y) => $x['skor'] <=> $y['skor']);
+            }
+        }
 
         // geometri potongan jalur tiap angkot + titik pindah (sekali query)
         $nilai = [];
@@ -432,6 +449,7 @@ class TrayekController extends Controller
                 }
                 $x = [
                     'menit' => (int) round($o['menit']),
+                    'skor' => round($o['skor'], 1),   // bobot Dijkstra (jalan kaki x2), dipakai untuk urutan
                     'jalan_ke_naik_m' => (int) round($leg[0]['d1']),
                     'jalan_dari_turun_m' => (int) round(end($leg)['d2']),
                     'tarif' => array_sum(array_map(fn ($l) => $tarif[$l['kode_trayek']] ?? $tarifUmum, $legs)),

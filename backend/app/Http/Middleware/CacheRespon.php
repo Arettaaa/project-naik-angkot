@@ -5,12 +5,13 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Simpan respon GET JSON di cache file (data trayek & kepadatan statis, query PostGIS-nya berat),
  * lalu kirim terkompresi gzip kalau browser mendukung (GeoJSON kepadatan ±3 MB -> ±0,4 MB).
- * Setelah data di database diperbarui: php artisan cache:clear file
+ * Cache otomatis diperbarui setelah data dimuat ulang (lihat versiData). Hapus manual: php artisan cache:clear file
  */
 class CacheRespon
 {
@@ -21,7 +22,7 @@ class CacheRespon
         }
 
         $store = Cache::store('file');
-        $key = 'naik:' . sha1($request->fullUrl());
+        $key = 'naik:' . self::versiData() . ':' . sha1($request->fullUrl());
         $isi = $store->get($key);
         $status = 'HIT';
 
@@ -44,5 +45,19 @@ class CacheRespon
         }
 
         return response($isi, 200, $headers);
+    }
+
+    /**
+     * Versi data = OID tabel naik.rute & naik.ruas_jalan. buat_skema_rute_v4.py men-DROP lalu membuat ulang
+     * tabel-tabel ini, jadi OID-nya berubah setiap data dimuat ulang -> cache lama otomatis tidak terpakai.
+     */
+    private static function versiData(): string
+    {
+        try {
+            $v = DB::selectOne("SELECT COALESCE(to_regclass('naik.rute')::oid, 0) || '-' || COALESCE(to_regclass('naik.ruas_jalan')::oid, 0) AS v");
+            return (string) $v->v;
+        } catch (\Throwable) {
+            return '0';
+        }
     }
 }
