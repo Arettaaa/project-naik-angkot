@@ -98,7 +98,9 @@ export default function PinPeta({ label, warna, awal, gps: gpsAwal = null, onBat
     map.panTo(map.containerPointToLatLng([p.x, p.y]))
   }
 
-  const siap = !geser && !tarik && alamat.kunci === kunci
+  // tombol bisa dipakai begitu pin diam; alamat tidak perlu ditunggu (kalau belum ada, diisi belakangan)
+  const diam = !geser && !tarik
+  const siap = diam && alamat.kunci === kunci
   const nama = siap ? (alamat.data?.nama ?? 'Titik di peta') : null
   const ket = siap ? (alamat.data?.ket ?? (alamat.gagal ? 'Alamat tidak bisa dimuat — titik tetap bisa dipakai' : null)) : null
   const jauhDariGps = gps && map.distance([gps.lat, gps.lng], [pusat.lat, pusat.lng])
@@ -180,8 +182,13 @@ export default function PinPeta({ label, warna, awal, gps: gpsAwal = null, onBat
               Batal
             </button>
             <PrimaryButton
-              disabled={!siap}
-              onClick={() => onPilih({ lat: +pusat.lat.toFixed(6), lng: +pusat.lng.toFixed(6), nama: nama ?? 'Titik di peta', ket: alamat.data?.ket ?? null })}
+              disabled={!diam}
+              onClick={() =>
+                onPilih(
+                  { lat: +pusat.lat.toFixed(6), lng: +pusat.lng.toFixed(6), nama: nama ?? 'Titik di peta', ket: siap ? (alamat.data?.ket ?? null) : null },
+                  !siap || !alamat.data,
+                )
+              }
             >
               Pilih lokasi ini
             </PrimaryButton>

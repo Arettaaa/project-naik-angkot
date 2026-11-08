@@ -229,7 +229,7 @@ class PoiController extends Controller
     private function reverseNominatim(float $lat, float $lng): ?array
     {
         try {
-            $res = Http::timeout(5)->withHeaders(['User-Agent' => self::UA, 'Accept-Language' => 'id'])
+            $res = Http::timeout(3)->withHeaders(['User-Agent' => self::UA, 'Accept-Language' => 'id'])
                 ->get('https://nominatim.openstreetmap.org/reverse', ['lat' => $lat, 'lon' => $lng, 'format' => 'jsonv2', 'zoom' => 18, 'addressdetails' => 1]);
             if (!$res->successful() || !$res->json('address')) {
                 return null;

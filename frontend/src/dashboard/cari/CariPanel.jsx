@@ -88,27 +88,22 @@ export default function CariPanel() {
   const besar = useLayarBesar()
   const hasilRef = useRef(null)
 
-  // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, coba lokasi saya sebagai asal, lalu cari otomatis
+  // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, lalu pengguna isi asal sendiri.
+  // Lokasi GPS TIDAK diambil otomatis: hanya kalau pengguna menekan "Lokasi saya".
   const [params] = useSearchParams()
-  const otomatis = useRef(false)
   useEffect(() => {
     const ke = params.get('ke')?.split(',').map(Number)
     if (ke && ke.length === 2 && ke.every(Number.isFinite)) {
       setTitik('tujuan', { lat: ke[0], lng: ke[1], nama: params.get('nama') || 'Tujuan', ket: params.get('ket') })
       setMode('asal')
-      otomatis.current = true
-      lokasiSaya()
       return
     }
     if (params.get('pin') === 'tujuan' || params.get('pin') === 'asal') bukaPin(params.get('pin'))
-    // asal otomatis = lokasi saya (diam-diam; kalau ditolak, pengguna isi sendiri)
-    if (!asal) lokasiSaya('asal', { diam: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
   // sekali pilih langsung dicari: begitu asal & tujuan terisi, tanpa perlu tekan tombol
   const permintaan = useRef(0)
   useEffect(() => {
-    otomatis.current = false
     if (!asal || !tujuan) return
     const t = setTimeout(cari, 120)
     return () => clearTimeout(t)
@@ -327,8 +322,9 @@ export default function CariPanel() {
           awal={awal}
           gps={pin.gps}
           onBatal={() => setPin(null)}
-          onPilih={(t) => {
+          onPilih={(t, alamatBelum) => {
             pilihTempat(j, t)
+            if (alamatBelum) isiAlamat(j, t) // alamat belum sempat dimuat: isi nama belakangan
             setLokasiKurang(null)
             setPin(null)
           }}
