@@ -130,6 +130,17 @@ export function IsiNomor({ kode }) {
   return String(kode ?? '').replace(/^Trayek\s*/i, '').replace(/AK$/i, '')
 }
 
+export function NomorChip({ kode }) {
+  const n = IsiNomor({ kode })
+  if (!trayekLama(kode)) return n
+  return (
+    <span className="flex flex-col items-center leading-none">
+      {n}
+      <span className="mt-0.5 text-[8.5px] font-semibold tracking-wide uppercase opacity-85">lama</span>
+    </span>
+  )
+}
+
 export function KodeBadge({ kode, warna, size = 'md', className = '' }) {
   const isLama = trayekLama(kode)
   const n = IsiNomor({ kode })

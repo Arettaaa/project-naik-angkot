@@ -14,12 +14,12 @@ import { useDashboard } from '../context'
 import { Card, CardHeader, Floating, KodeBadge as Badge, PilWarga } from '../ui'
 import { nomorLengkap, nomorTampil, nomorWarga } from '../nomorWarga'
 import {
-  IconArrowLeft, IconBus, IconCap, IconChevronRight, IconHome, IconList, IconMap, IconPlay, IconSearch, IconSwap, IconTransfer, IconWalk,
+  IconArrowLeft, IconBus, IconCap, IconChevronRight, IconFlag, IconHome, IconList, IconMap, IconPlay, IconSearch, IconSwap, IconTransfer, IconWalk,
 } from '../icons'
 import NavigasiSimulasi from './NavigasiSimulasi'
-import { aturToleransiKlik } from '../simulasi'
-
+import { aturToleransiKlik, jarakM } from '../simulasi'
 const KodeBadge = (p) => <Badge size="sm" {...p} />
+const SUDAH_SAMPAI_M = 150
 
 function PanelSection({ title, children }) {
   return (
@@ -107,14 +107,9 @@ export default function CariPanel() {
     if (params.get('pin') === 'tujuan' || params.get('pin') === 'asal') bukaPin(params.get('pin'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
-  // sekali pilih langsung dicari: begitu asal & tujuan terisi, tanpa perlu tekan tombol
-  const permintaan = useRef(0)
-  useEffect(() => {
-    if (!asal || !tujuan) return
-    const t = setTimeout(cari, 120)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asal?.lat, asal?.lng, tujuan?.lat, tujuan?.lng])
+ 
+// asal-tujuan lebih dekat dari ini = sudah sampai, tidak dicarikan angkot (m)
+const SUDAH_SAMPAI_M = 150
 
   function setTitik(jenis, titik) {
     if (jenis === 'asal') setAsal(titik)
@@ -282,6 +277,28 @@ export default function CariPanel() {
             Mencari angkot…
           </p>
         )}
+                {sudahSampai && (
+          <div className="mt-4 rounded-2xl border border-[#CDEBDD] bg-[#EEF8F3] p-4">
+            <p className="flex items-center gap-2 text-[14.5px] font-bold text-tentang-dark">
+              <IconFlag className="h-4.5 w-4.5 text-primary" />
+              {jarakAsalTujuan < 5 ? 'Asal dan tujuan sama' : 'Kamu sudah di lokasi tujuan'}
+            </p>
+            <p className="mt-1 text-[13px] leading-snug text-dark/70">
+              {jarakAsalTujuan < 5
+                ? 'Pilih tempat tujuan yang lain untuk mencari angkot.'
+                : `Tujuan cuma ±${Math.round(jarakAsalTujuan)} m dari asal — jalan kaki sekitar ${Math.max(1, menitJalan(jarakAsalTujuan * 1.25))} menit, tidak perlu naik angkot.`}
+            </p>
+            <button
+              onClick={() => {
+                setTujuan(null)
+                setMode('tujuan')
+              }}
+              className="mt-3 inline-flex h-9 items-center rounded-xl bg-white px-3.5 text-[13px] font-semibold text-primary shadow-[0_1px_0_rgba(0,0,0,0.04)] ring-1 ring-[#CDEBDD] hover:bg-[#F6FBF8]"
+            >
+              Ganti tujuan
+            </button>
+          </div>
+        )}
         {(!asal || !tujuan) && (
           <p className="mt-2 text-center text-[11px] sm:text-xs text-dark/50 leading-relaxed">
             Ketik nama tempat, pilih lewat peta, atau ketuk peta untuk memilih titik <strong>{mode === 'asal' ? 'asal' : 'tujuan'}</strong>.
@@ -292,7 +309,7 @@ export default function CariPanel() {
           <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs sm:text-sm text-red-800">{hasil.error.message}</div>
         )}
 
-        {hasil.data && (
+        {hasil.data && !sudahSampai && (
           <div ref={hasilRef} className={`mt-4 scroll-mt-2 border-t border-[#EDF1F2] pt-3 transition-opacity ${hasil.loading ? 'opacity-50' : ''}`}>
             <Hasil
               data={hasil.data}

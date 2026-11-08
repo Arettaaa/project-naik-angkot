@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom'
 import { Muat } from '../ui'
 import { IconChevronRight } from '../icons'
 import { nomor } from '../lib'
-import { IsiNomor } from '../ui'
-import { nomorTampil } from '../nomorWarga'
+import { NomorChip } from '../ui'
+import { nomorTampil, trayekLama } from '../nomorWarga'
 
 // Chip nomor rute berwarna (pilih lebih dari satu, langsung tampil di peta).
 export function ChipNomor({ t, aktif, onClick, className = '' }) {
@@ -16,7 +16,7 @@ export function ChipNomor({ t, aktif, onClick, className = '' }) {
       className={`flex h-10 shrink-0 items-center justify-center rounded-xl border-2 font-display text-[15px] font-bold transition active:scale-95 ${className}`}
       style={aktif ? { backgroundColor: t.warna, borderColor: t.warna, color: '#fff' } : { borderColor: t.warna + '55', color: t.warna, backgroundColor: t.warna + '0F' }}
     >
-      <IsiNomor kode={t.kode_trayek} />
+      <NomorChip kode={t.kode_trayek} />
     </button>
   )
 }
@@ -77,7 +77,8 @@ export default function PilihRute({ trayek, dipilih, toggle, hapus, pilihSemua, 
       <Muat loading={trayek.loading} error={trayek.error} onRetry={onRetry} />
       {trayek.data && (
         <div className={baris ? 'naik-scroll -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1' : 'mt-3 grid grid-cols-6 gap-2'}>
-          {trayek.data.map((t) => (
+          {/* trayek SK dulu, trayek lama di ujung */}
+          {[...trayek.data].sort((a, b) => trayekLama(a.kode_trayek) - trayekLama(b.kode_trayek)).map((t) => (
             <ChipNomor key={t.kode_trayek} t={t} aktif={dipilih.includes(t.kode_trayek)} onClick={() => toggle(t.kode_trayek)} className={baris ? 'w-12' : ''} />
           ))}
         </div>

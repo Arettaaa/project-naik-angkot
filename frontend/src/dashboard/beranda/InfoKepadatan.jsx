@@ -3,7 +3,7 @@ import { api } from '../../api/naik'
 import { barisJalur, fmtKm, ringkasKota, ringkasRute } from '../kepadatan'
 import { KEPADATAN, kepadatanOf } from '../warna'
 import { nomor } from '../lib'
-import { IsiNomor } from '../ui'
+import { NomorChip } from '../ui'
 import { nomorTampil } from '../nomorWarga'
 
 // Bar bertumpuk Rendah | Sedang | Tinggi (persen panjang jalan).
@@ -143,7 +143,7 @@ function JalurRute({ data, t, ringkas }) {
     <div>
       <div className="flex items-center gap-3">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl font-display text-[17px] font-bold text-white" style={{ backgroundColor: t.warna }}>
-          <IsiNomor kode={kode} />
+          <NomorChip kode={kode} />
         </span>
         <div className="min-w-0 pr-9">
           <p className="text-[11px] font-semibold tracking-[0.08em] text-primary uppercase">Kepadatan sepanjang jalur</p>
