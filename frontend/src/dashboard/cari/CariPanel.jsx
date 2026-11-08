@@ -36,10 +36,16 @@ function KlikPeta({ onClick }) {
   return null
 }
 
-// opsi tercepat dari semua hasil (langsung maupun pindah)
+// opsi tercepat (menit asli) dari semua hasil (langsung maupun pindah)
 function opsiTercepat(data) {
   const semua = JENIS_OPSI.flatMap(([jenis]) => (data[jenis] ?? []).map((o, i) => ({ jenis, i, menit: o.menit ?? 0 })))
   return semua.sort((a, b) => a.menit - b.menit)[0] ?? null
+}
+
+// opsi yang direkomendasikan: skor Dijkstra terkecil (jalan kaki dihitung 2x), dipilih otomatis
+function opsiTerbaik(data) {
+  const semua = JENIS_OPSI.flatMap(([jenis]) => (data[jenis] ?? []).map((o, i) => ({ jenis, i, skor: o.skor ?? o.menit ?? 0 })))
+  return semua.sort((a, b) => a.skor - b.skor)[0] ?? null
 }
 
 function FitToPoints({ points, detailBuka, navigasiAktif }) {
@@ -174,7 +180,7 @@ export default function CariPanel() {
       const data = await api.rekomendasi(asal, tujuan)
       if (id !== permintaan.current) return // sudah ada pencarian yang lebih baru
       setHasil({ data, loading: false, error: null })
-      const best = opsiTercepat(data)
+      const best = opsiTerbaik(data)
       setPilih(best ? { jenis: best.jenis, i: best.i } : null)
       // layar lebar: langsung tampilkan langkah opsi tercepat. HP: tetap di daftar hasil (panel langkah menutupi peta)
       setDetailBuka(Boolean(best) && window.innerWidth >= 1024)
@@ -500,7 +506,7 @@ const menitOpsi = (o) => normalOpsi(o).menit
 
 function Hasil({ data, warna, pilih, onPilihOpsi, onMulaiNavigasi }) {
   const kosong = JENIS_OPSI.every(([jenis]) => !data[jenis]?.length)
-  const dekat = data.jarak_lurus_m != null && data.jarak_lurus_m <= 1200
+  const dekat = data.jarak_lurus_m != null && data.jarak_lurus_m <= 1500
   const tercepat = opsiTercepat(data)
   return (
     <>
