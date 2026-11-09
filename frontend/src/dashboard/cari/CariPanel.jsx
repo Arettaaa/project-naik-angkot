@@ -19,7 +19,7 @@ import {
 import NavigasiSimulasi from './NavigasiSimulasi'
 import { aturToleransiKlik, jarakM } from '../simulasi'
 const KodeBadge = (p) => <Badge size="sm" {...p} />
-const SUDAH_SAMPAI_M = 150
+const SUDAH_SAMPAI_M = 200
 
 function PanelSection({ title, children }) {
   return (
@@ -96,11 +96,21 @@ export default function CariPanel() {
   const permintaan = useRef(0)
   
 
-  // dari Beranda ("Mau ke mana hari ini?"): /cari?ke=lat,lng&nama=... -> isi tujuan, lalu pengguna isi asal sendiri.
-  // Lokasi GPS TIDAK diambil otomatis: hanya kalau pengguna menekan "Lokasi saya".
+  // dari Beranda ("Mau ke mana hari ini?") atau Chatbot AI: /cari?dari=lat,lng&ke=lat,lng...
   const [params] = useSearchParams()
   useEffect(() => {
+    const dari = params.get('dari')?.split(',').map(Number)
     const ke = params.get('ke')?.split(',').map(Number)
+    if (dari && dari.length === 2 && dari.every(Number.isFinite) && ke && ke.length === 2 && ke.every(Number.isFinite)) {
+      setAsal({ lat: dari[0], lng: dari[1], nama: params.get('nama_asal') || 'Asal' })
+      setTujuan({ lat: ke[0], lng: ke[1], nama: params.get('nama_tujuan') || params.get('nama') || 'Tujuan' })
+      setHasil({ data: null, loading: false, error: null })
+      setPilih(null)
+      setDetailBuka(false)
+      setNavigasiAktif(false)
+      setMode('asal')
+      return
+    }
     if (ke && ke.length === 2 && ke.every(Number.isFinite)) {
       setTitik('tujuan', { lat: ke[0], lng: ke[1], nama: params.get('nama') || 'Tujuan', ket: params.get('ket') })
       setMode('asal')

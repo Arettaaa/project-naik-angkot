@@ -69,6 +69,8 @@ ATURAN RUTE:
 7. Jika status_pencarian_rute adalah tidak_ditemukan, jelaskan bahwa rute belum ditemukan. Jangan membuat alternatif sendiri.
 8. Jika lokasi belum lengkap, tanyakan lokasi asal atau tujuan yang belum diketahui.
 9. Jangan menyatakan suatu rute langsung apabila hasil mesin menunjukkan perpindahan.
+10. Jika status_pencarian_rute adalah sudah_sampai, jelaskan dengan ramah bahwa lokasi asal dan tujuan sangat dekat (sebutkan perkiraan meter yang ada). Sarankan cukup jalan kaki santai 1-3 menit tanpa naik angkot. Jangan merekomendasikan trayek angkot.
+11. Jika status_pencarian_rute adalah luar_kota_bogor, jelaskan secara santun bahwa lokasi tujuan/asal berada di luar batas operasional jaringan angkot resmi Kota Bogor. Sarankan menggunakan transportasi antarkota, KRL, bus feeder, atau transportasi daring. Jangan membuat rute angkot fiktif.
 
 ATURAN REKOMENDASI TEMPAT:
 1. Gunakan hanya tempat dari poi_di_sepanjang_rute atau poi_rekomendasi.
@@ -125,6 +127,9 @@ PERTANYAAN PENGGUNA:
 PETUNJUK:
 - Periksa status_pencarian_rute terlebih dahulu.
 - Jika berhasil, gunakan hasil_pencarian_rute sebagai dasar rekomendasi.
+- Jika sudah_sampai, sampaikan dengan ramah bahwa lokasinya sangat dekat dan sarankan jalan kaki santai tanpa perlu naik angkot.
+- Jika luar_kota_bogor, sampaikan bahwa lokasi berada di luar batas operasional angkot Kota Bogor dan sarankan opsi alternatif seperti KRL/bus/transportasi daring.
+- Jika eksplorasi_tempat, fokus merekomendasikan tempat menarik berdasarkan data tempat yang tersedia tanpa memaksakan rute asal-tujuan.
 - Gunakan poi_di_sepanjang_rute untuk merekomendasikan tempat menarik.
 - Jika lokasi belum lengkap, tanyakan informasi yang diperlukan.
 - Jangan membuat nomor trayek, tarif, waktu, atau jarak sendiri.
@@ -185,7 +190,10 @@ try {
                 return $this->fallbackOfflineResponse($cleanInput, $contextSpasial);
             }
 
-            $rawText = $response->json('candidates.0.content.parts.0.text') ?? '{}';
+            $rawText = trim($response->json('candidates.0.content.parts.0.text') ?? '{}');
+            if (preg_match('/```(?:json)?\s*(\{.*\})\s*```/s', $rawText, $m)) {
+                $rawText = $m[1];
+            }
             $parsed = json_decode($rawText, true);
 
            
@@ -215,13 +223,18 @@ if (is_array($parsed) && isset($parsed['narasi'])) {
             }
 
             $leg = $ruteValid[$kode];
+            $asalNama = $contextSpasial['lokasi_asal']['nama'] ?? 'lokasi asal';
+            $tujuanNama = $contextSpasial['lokasi_tujuan']['nama'] ?? 'lokasi tujuan';
+
+            $defaultNaik = $idx === 0 ? "Dekat {$asalNama}" : "Titik transfer";
+            $defaultTurun = $idx === count($parsed['rekomendasi_angkot'] ?? []) - 1 ? "Dekat {$tujuanNama}" : "Titik transfer";
 
             $rekomendasi[] = [
                 'kode_trayek' => $kode,
                 'arah' => $leg['arah'] ?? null,
-                'titik_naik' => null,
-                'titik_turun' => null,
-                'tarif' => null,
+                'titik_naik' => !empty($item['titik_naik']) && $item['titik_naik'] !== $leg['nama_trayek'] ? $item['titik_naik'] : ($leg['titik_naik'] ?? $defaultNaik),
+                'titik_turun' => !empty($item['titik_turun']) ? $item['titik_turun'] : ($leg['titik_turun'] ?? $defaultTurun),
+                'tarif' => 5000,
             ];
         }
     }
@@ -326,14 +339,24 @@ private function fallbackOfflineResponse(string $pesan, array $context): array
     // Ambil rute terbaik yang benar-benar dihitung mesin rekomendasi
     if ($statusRute === 'berhasil' && !empty($hasilRute[0])) {
         $utama = $hasilRute[0];
+        $asal = $context['lokasi_asal']['nama'] ?? 'lokasi asal';
+        $tujuan = $context['lokasi_tujuan']['nama'] ?? 'lokasi tujuan';
+        $totalLegs = count($utama['legs'] ?? []);
 
-        foreach ($utama['legs'] ?? [] as $leg) {
+        foreach ($utama['legs'] ?? [] as $idx => $leg) {
+            $titikNaik = $leg['titik_naik'] ?? ($idx === 0
+                ? "Dekat {$asal}" . (isset($utama['jalan_ke_naik_m']) && $utama['jalan_ke_naik_m'] > 0 ? " (jalan kaki {$utama['jalan_ke_naik_m']} m)" : "")
+                : "Titik transit transfer");
+            $titikTurun = $leg['titik_turun'] ?? ($idx === $totalLegs - 1
+                ? "Dekat {$tujuan}" . (isset($utama['jalan_dari_turun_m']) && $utama['jalan_dari_turun_m'] > 0 ? " (jalan kaki {$utama['jalan_dari_turun_m']} m)" : "")
+                : "Titik transit transfer");
+
             $rekomendasiAngkot[] = [
                 'kode_trayek' => $leg['kode_trayek'],
                 'arah' => $leg['arah'] ?? null,
-                'titik_naik' => null,
-                'titik_turun' => null,
-                'tarif' => null,
+                'titik_naik' => $titikNaik,
+                'titik_turun' => $titikTurun,
+                'tarif' => 5000,
             ];
         }
 
@@ -349,9 +372,11 @@ private function fallbackOfflineResponse(string $pesan, array $context): array
                 . implode(' kemudian ', $kode) . ".";
 
             if (count($kode) > 1) {
-                $narasi .= " Perjalanan ini memerlukan perpindahan angkot.";
+                $pindahCount = count($kode) - 1;
+                $totalTarif = count($kode) * 5000;
+                $narasi .= " Perjalanan ini memerlukan {$pindahCount}x perpindahan angkot dengan total estimasi tarif Rp" . number_format($totalTarif, 0, ',', '.') . ".";
             } else {
-                $narasi .= " Perjalanan ini menggunakan satu trayek.";
+                $narasi .= " Perjalanan ini menggunakan satu trayek langsung dengan tarif flat Rp5.000.";
             }
         }
 
@@ -364,8 +389,18 @@ private function fallbackOfflineResponse(string $pesan, array $context): array
             $narasi .= " Estimasi total tarif berdasarkan hasil perhitungan adalah Rp"
                 . number_format((float) $utama['tarif'], 0, ',', '.') . ".";
         }
+    } elseif ($statusRute === 'sudah_sampai') {
+        $jarak = $context['jarak_m'] ?? 100;
+        $asal = $context['lokasi_asal']['nama'] ?? 'lokasi asal';
+        $tujuan = $context['lokasi_tujuan']['nama'] ?? 'lokasi tujuan';
+        $narasi = "Jarak dari {$asal} ke {$tujuan} sangat dekat (hanya sekitar {$jarak} meter). Kamu cukup berjalan kaki santai sekitar 1-3 menit saja tanpa perlu naik angkot.";
+    } elseif ($statusRute === 'luar_kota_bogor') {
+        $lokasiLuar = $context['lokasi_luar'] ?? 'lokasi tujuan';
+        $narasi = "Lokasi {$lokasiLuar} berada di luar batas wilayah operasional angkot resmi Kota Bogor. Angkot kota hanya melayani perjalanan di dalam wilayah Kota Bogor. Untuk menuju ke sana, kamu disarankan menggunakan transportasi antarkota, KRL, bus feeder, atau transportasi daring.";
     } elseif ($statusRute === 'tidak_ditemukan') {
         $narasi = "Maaf, belum ditemukan kombinasi trayek yang menghubungkan kedua lokasi tersebut berdasarkan data rute yang tersedia.";
+    } elseif ($statusRute === 'eksplorasi_tempat') {
+        $narasi = "Berikut beberapa rekomendasi tempat menarik di Kota Bogor yang bisa kamu kunjungi.";
     } elseif ($statusRute === 'lokasi_belum_lengkap') {
         $narasi = "Saya bisa membantu mencari rute angkot. Boleh informasikan lokasi asal dan tujuan perjalanan kamu?";
     } elseif ($statusRute === 'gagal') {

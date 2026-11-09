@@ -101,7 +101,7 @@ class RekomendasiSpasialService
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getNearestPoi(float $lat, float $lon, int $radiusM = 500, int $limit = 10): array
+    public function getNearestPoi(float $lat, float $lon, int $radiusM = 500, int $limit = 10, ?string $kategori = null): array
     {
         $radiusM = min(max($radiusM, 50), 2000);
         $limit = min(max($limit, 1), 50);
@@ -111,16 +111,18 @@ class RekomendasiSpasialService
                    p.nama_tempat,
                    p.kategori,
                    p.sub_kategori,
+                   p.alamat,
                    ROUND(ST_Distance(p.geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography)) AS jarak_m,
                    ST_Y(p.geom) AS lat,
                    ST_X(p.geom) AS lon
             FROM naik.poi p
             WHERE ST_DWithin(p.geom::geography, ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography, ?)
+              AND (?::text IS NULL OR p.kategori = ?)
             ORDER BY jarak_m ASC
             LIMIT ?
         ";
 
-        $rows = DB::select($sql, [$lon, $lat, $lon, $lat, $radiusM, $limit]);
+        $rows = DB::select($sql, [$lon, $lat, $lon, $lat, $radiusM, $kategori, $kategori, $limit]);
 
         return array_map(function ($row) {
             return [
@@ -128,6 +130,7 @@ class RekomendasiSpasialService
                 'nama' => $row->nama_tempat,
                 'kategori' => $row->kategori,
                 'sub_kategori' => $row->sub_kategori,
+                'alamat' => $row->alamat ?? null,
                 'jarak_m' => (int) $row->jarak_m,
                 'koordinat' => [
                     'lat' => (float) $row->lat,
@@ -135,5 +138,82 @@ class RekomendasiSpasialService
                 ],
             ];
         }, $rows);
+    }
+
+    /**
+     * Ambil POI di sepanjang koridor segmen geometri riil (GeoJSON LineString).
+     *
+     * @param array|string|object $segmenGeoJson
+     * @param int $radiusM
+     * @param string|null $kategori
+     * @param int $limit
+     * @return array<int, array<string, mixed>>
+     */
+    public function getKoridorPoiDariSegmen(array|string|object $segmenGeoJson, int $radiusM = 300, ?string $kategori = null, int $limit = 10): array
+    {
+        $jsonStr = is_string($segmenGeoJson) ? $segmenGeoJson : json_encode($segmenGeoJson);
+        if (empty($jsonStr) || $jsonStr === '{}' || $jsonStr === 'null') {
+            return [];
+        }
+
+        $radiusM = min(max($radiusM, 50), 1000);
+        $limit = min(max($limit, 1), 50);
+
+        try {
+            $sql = "
+                WITH segmen AS (
+                    SELECT ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(?), 4326), 32748) AS g
+                ),
+                raw_pois AS (
+                    SELECT p.poi_id, p.osm_id, p.nama_tempat, p.kategori, p.sub_kategori, p.alamat,
+                           ST_Distance(s.g, ST_Transform(p.geom, 32748)) as dist_m,
+                           ST_LineLocatePoint(s.g, ST_Transform(p.geom, 32748)) as progress,
+                           ST_Y(p.geom) as lat, ST_X(p.geom) as lon
+                    FROM naik.poi p, segmen s
+                    WHERE ST_DWithin(s.g, ST_Transform(p.geom, 32748), ?)
+                      AND (?::text IS NULL OR p.kategori = ?)
+                      AND (?::text IS NOT NULL OR p.kategori IN ('wisata', 'kuliner', 'belanja', 'pendidikan'))
+                ),
+                dedup AS (
+                    SELECT DISTINCT ON (LOWER(nama_tempat))
+                           poi_id, osm_id, nama_tempat, kategori, sub_kategori, alamat,
+                           ROUND(dist_m) as jarak_ke_jalur_m, progress, lat, lon
+                    FROM raw_pois
+                    ORDER BY LOWER(nama_tempat), dist_m ASC
+                ),
+                bucketed AS (
+                    SELECT *,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY LEAST(4, FLOOR(progress * 5)::int)
+                               ORDER BY jarak_ke_jalur_m ASC
+                           ) as rk
+                    FROM dedup
+                )
+                SELECT poi_id, osm_id, nama_tempat, kategori, sub_kategori, alamat, jarak_ke_jalur_m, progress, lat, lon
+                FROM bucketed
+                ORDER BY progress ASC
+                LIMIT ?;
+            ";
+
+            $rows = DB::select($sql, [$jsonStr, $radiusM, $kategori, $kategori, $kategori, $limit]);
+
+            return array_map(function ($row) {
+                return [
+                    'poi_id' => (int) $row->poi_id,
+                    'osm_id' => $row->osm_id ? (int) $row->osm_id : null,
+                    'nama' => $row->nama_tempat,
+                    'kategori' => $row->kategori,
+                    'sub_kategori' => $row->sub_kategori,
+                    'alamat' => $row->alamat,
+                    'jarak_ke_jalur_m' => (int) $row->jarak_ke_jalur_m,
+                    'koordinat' => [
+                        'lat' => (float) $row->lat,
+                        'lon' => (float) $row->lon,
+                    ],
+                ];
+            }, $rows);
+        } catch (\Throwable $e) {
+            return [];
+        }
     }
 }

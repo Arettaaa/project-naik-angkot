@@ -168,6 +168,7 @@ export default function AiChatbot() {
             ? res.rekomendasi_angkot
             : [],
           tempat_singgah: Array.isArray(res?.tempat_singgah) ? res.tempat_singgah : [],
+          data_rute: res?.data_rute ?? null,
         },
       ])
     } catch (err) {
@@ -339,13 +340,30 @@ export default function AiChatbot() {
                                 </dl>
                               )}
 
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/rute/${encodeURIComponent(noRute)}`)}
-                                className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-[#E3E8EA] bg-[#F6F9F9] py-1.5 text-[12px] font-semibold text-tentang-dark transition hover:border-primary hover:bg-[#EAF4EE] hover:text-primary"
-                              >
-                                Lihat rute di peta <IconArrowRight className="h-3.5 w-3.5" />
-                              </button>
+                              {msg.data_rute?.asal && msg.data_rute?.tujuan ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBuka(false)
+                                    const a = msg.data_rute.asal
+                                    const b = msg.data_rute.tujuan
+                                    navigate(
+                                      `/cari?dari=${a.lat},${a.lon ?? a.lng}&nama_asal=${encodeURIComponent(a.nama)}&ke=${b.lat},${b.lon ?? b.lng}&nama_tujuan=${encodeURIComponent(b.nama)}`
+                                    )
+                                  }}
+                                  className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-primary bg-primary py-2 text-[12px] font-semibold text-white shadow-sm transition hover:bg-primary/90"
+                                >
+                                  Lihat rute di peta <IconArrowRight className="h-3.5 w-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/rute/${encodeURIComponent(noRute)}`)}
+                                  className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-[#E3E8EA] bg-[#F6F9F9] py-1.5 text-[12px] font-semibold text-tentang-dark transition hover:border-primary hover:bg-[#EAF4EE] hover:text-primary"
+                                >
+                                  Lihat rute di peta <IconArrowRight className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </div>
                           )
                         })}
