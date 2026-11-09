@@ -21,6 +21,7 @@ class AiRekomendasiController extends Controller
      * POST /api/ai/rekomendasi
      * Rekomendasi percakapan rute dan tempat singgah berbasis AI.
      */
+    
     public function __invoke(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
@@ -38,11 +39,28 @@ class AiRekomendasiController extends Controller
         }
 
         $validated = $validator->validated();
+
+        // 1. Ambil konteks trayek dan tempat dari PostGIS
         $context = $this->buildSpatialContext($validated);
-        $result = $this->aiService->generateRecommendation($validated['pesan'], $context);
+
+        // 2. Cari pasangan lokasi asal dan tujuan
+        // 3. Ambil hasil rekomendasi dari mesin pencarian rute
+        $routeContext = $this->buildRouteContext($validated);
+
+        // Gabungkan hasil pencarian rute ke konteks AI
+        if (!empty($routeContext)) {
+            $context = array_merge($context, $routeContext);
+        }
+
+        // 4. Kirim data yang sudah diverifikasi ke Gemini
+        $result = $this->aiService->generateRecommendation(
+            $validated['pesan'],
+            $context
+        );
 
         return response()->json($result);
     }
+
 
     /**
      * Bangun konteks spasial berbasis data PostGIS untuk grounding AI.
@@ -195,4 +213,222 @@ class AiRekomendasiController extends Controller
 
         return $context;
     }
+
+    
+/**
+ * Membaca lokasi asal dan tujuan dari pertanyaan pengguna.
+ */
+private function extractLocations(string $pesan): array
+{
+    $asal = null;
+    $tujuan = null;
+
+    $pesan = trim($pesan);
+
+    if (preg_match(
+        '/\bdari\s+(.+?)\s+(?:ke|menuju)\s+(.+?)(?=\s+(?:naik|pakai|menggunakan|berapa|gimana|bagaimana)\b|[?.!,]|$)/iu',
+        $pesan,
+        $m
+    )) {
+        $asal = trim($m[1]);
+        $tujuan = trim($m[2]);
+    } elseif (preg_match(
+        '/\b(?:ke|menuju)\s+(.+?)(?=\s+(?:naik|pakai|menggunakan|berapa|gimana|bagaimana)\b|[?.!,]|$)/iu',
+        $pesan,
+        $m
+    )) {
+        $tujuan = trim($m[1]);
+    }
+
+    return [
+        'asal' => $asal,
+        'tujuan' => $tujuan,
+    ];
+}
+/**
+ * Mencari koordinat nama tempat dari database PostGIS.
+ */
+private function findPoiLocation(string $nama): ?array
+{
+    $nama = trim($nama);
+
+    if (mb_strlen($nama) < 3) {
+        return null;
+    }
+
+    $row = DB::selectOne("
+        SELECT
+            nama_tempat AS nama,
+            alamat,
+            ST_Y(geom) AS lat,
+            ST_X(geom) AS lon
+        FROM naik.poi
+        WHERE nama_tempat ILIKE ?
+        ORDER BY
+            CASE
+                WHEN LOWER(nama_tempat) = LOWER(?) THEN 0
+                WHEN LOWER(nama_tempat) LIKE LOWER(?) THEN 1
+                ELSE 2
+            END,
+            LENGTH(nama_tempat)
+        LIMIT 1
+    ", [
+        '%' . $nama . '%',
+        $nama,
+        $nama . '%'
+    ]);
+
+    if (!$row) {
+        return null;
+    }
+
+    return [
+        'nama' => $row->nama,
+        'alamat' => $row->alamat,
+        'lat' => (float) $row->lat,
+        'lon' => (float) $row->lon,
+    ];
+}
+
+/**
+ * Menghubungkan pertanyaan dengan mesin pencarian rekomendasi rute.
+ */
+private function buildRouteContext(array $input): array
+{
+    $lokasi = $this->extractLocations($input['pesan']);
+
+    // Cari koordinat asal berdasarkan nama lokasi
+    $asal = $lokasi['asal']
+        ? $this->findPoiLocation($lokasi['asal'])
+        : null;
+
+    // Jika asal tidak disebutkan, gunakan GPS pengguna
+    if (!$lokasi['asal'] && isset($input['lat'], $input['lon'])) {
+        $asal = [
+            'nama' => 'Lokasi pengguna',
+            'lat' => (float) $input['lat'],
+            'lon' => (float) $input['lon'],
+        ];
+    }
+
+    // Cari koordinat tujuan dari database POI
+    $tujuan = $lokasi['tujuan']
+        ? $this->findPoiLocation($lokasi['tujuan'])
+        : null;
+
+    // Jangan membuat rute jika lokasi belum lengkap
+    if (!$asal || !$tujuan) {
+        return [
+            'status_pencarian_rute' => 'lokasi_belum_lengkap',
+            'lokasi_asal_dicari' => $lokasi['asal'],
+            'lokasi_tujuan_dicari' => $lokasi['tujuan'],
+        ];
+    }
+
+    // Gunakan mesin rekomendasi rute yang sudah ada di TrayekController
+    $routeRequest = Request::create(
+        '/api/rekomendasi',
+        'GET',
+        [
+            'asal' => $asal['lat'] . ',' . $asal['lon'],
+            'tujuan' => $tujuan['lat'] . ',' . $tujuan['lon'],
+            'radius' => 800,
+        ]
+    );
+
+    $routeResponse = app(TrayekController::class)
+        ->rekomendasi($routeRequest);
+
+    if ($routeResponse->getStatusCode() !== 200) {
+        return [
+            'status_pencarian_rute' => 'gagal',
+            'hasil_pencarian_rute' => [],
+        ];
+    }
+
+    $data = $routeResponse->getData(true);
+
+    // Gabungkan alternatif rute langsung dan rute transit
+    $semuaRute = array_merge(
+        $data['langsung'] ?? [],
+        $data['transfer'] ?? [],
+        $data['transfer2'] ?? []
+    );
+
+    // Urutkan berdasarkan waktu perjalanan
+    usort($semuaRute, fn ($a, $b) =>
+        ($a['menit'] ?? PHP_INT_MAX)
+        <=>
+        ($b['menit'] ?? PHP_INT_MAX)
+    );
+
+    $semuaRute = array_slice($semuaRute, 0, 5);
+
+    if (empty($semuaRute)) {
+        return [
+            'status_pencarian_rute' => 'tidak_ditemukan',
+            'lokasi_asal' => $asal,
+            'lokasi_tujuan' => $tujuan,
+            'hasil_pencarian_rute' => [],
+        ];
+    }
+
+    // Ambil hanya informasi penting untuk konteks AI
+    $hasilRute = [];
+    $poiTerkait = [];
+
+    foreach ($semuaRute as $opsi) {
+        $legs = [];
+
+        foreach ($opsi['legs'] ?? [] as $leg) {
+            $legs[] = [
+                'kode_trayek' => $leg['kode_trayek'],
+                'rute_id' => $leg['rute_id'],
+                'arah' => $leg['arah'],
+                'nama_trayek' => $leg['nama_trayek'],
+                'jarak_m' => $leg['jarak_m'],
+            ];
+
+            // Cari tempat menarik pada ruas trayek yang benar
+            $poi = $this->spasialService->getKoridorPoi(
+                $leg['kode_trayek'],
+                300,
+                null,
+                5,
+                (int) $leg['rute_id']
+            );
+
+            foreach ($poi as $tempat) {
+                $id = $tempat['poi_id'];
+
+                if (!isset($poiTerkait[$id])) {
+                    $tempat['trayek'] = $leg['kode_trayek'];
+                    $poiTerkait[$id] = $tempat;
+                }
+            }
+        }
+
+        $hasilRute[] = [
+            'menit' => $opsi['menit'] ?? null,
+            'tarif' => $opsi['tarif'] ?? null,
+            'jalan_ke_naik_m' => $opsi['jalan_ke_naik_m'] ?? null,
+            'jalan_dari_turun_m' => $opsi['jalan_dari_turun_m'] ?? null,
+            'legs' => $legs,
+            'pindah' => $opsi['pindah'] ?? [],
+        ];
+    }
+
+    return [
+        'status_pencarian_rute' => 'berhasil',
+        'lokasi_asal' => $asal,
+        'lokasi_tujuan' => $tujuan,
+        'hasil_pencarian_rute' => $hasilRute,
+        'poi_di_sepanjang_rute' => array_values(
+            array_slice($poiTerkait, 0, 12, true)
+        ),
+    ];
+}
+
+
+
 }
