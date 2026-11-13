@@ -118,8 +118,8 @@ export default function Hero() {
         </div>
 
         {/* Pill: cari rute + pilih nomor angkot untuk langsung melihat rutenya (tablet & desktop) */}
-        <div className="hero-muncul mt-5 inline-flex h-[52px] max-w-full items-center gap-1 rounded-full border border-white/40 bg-hero-pill pr-1.5 pl-5 shadow-[0_8px_24px_rgba(183,121,31,0.18)] [animation-delay:180ms] max-sm:w-full sm:mt-6 sm:h-14 lg:mt-6">
-          <Link to="/cari" className="inline-flex items-center gap-2.5 text-hero-brown transition-opacity hover:opacity-80 max-sm:flex-1">
+        <div className="hero-muncul mt-5 inline-flex h-[48px] max-w-full items-center gap-1 self-start rounded-full border border-white/40 bg-hero-pill pr-1 pl-4 shadow-[0_8px_24px_rgba(183,121,31,0.18)] [animation-delay:180ms] sm:mt-6 sm:h-14 sm:pr-1.5 sm:pl-5 lg:mt-6">
+          <Link to="/cari" className="inline-flex items-center gap-2.5 text-hero-brown transition-opacity hover:opacity-80">
             <svg width="16" height="16" viewBox="0 0 17 17" fill="none" className="shrink-0" aria-hidden="true">
               <path
                 d="M14.5 6.9c0 4.84-6.2 8.99-6.2 8.99S2.07 11.75 2.07 6.9a6.22 6.22 0 0 1 12.43 0Z"
