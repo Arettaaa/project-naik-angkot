@@ -68,7 +68,7 @@ export default function Hero() {
   return (
     <section
       aria-label="NAIK, teman perjalanan angkot Kota Bogor"
-      className="hero-section relative h-auto min-h-[calc(clamp(520px,100cqw,760px)+16cqw)] w-full overflow-hidden bg-[linear-gradient(180deg,#E8F6FF_0%,#E8F6FF_56%,#1A936F_56%,#1A936F_100%)] max-sm:min-h-[100svh] max-sm:bg-[linear-gradient(180deg,#E8F6FF_0%,#E8F6FF_calc(100%_-_16cqw_+_21px),#1A936F_calc(100%_-_16cqw_+_21px),#1A936F_100%)] min-[900px]:min-h-[calc(80cqw+80px+16cqw)] lg:h-[calc(84.3056cqw+16cqw)] lg:min-h-0"
+      className="hero-section relative h-auto min-h-[calc(clamp(520px,100cqw,760px)+16cqw)] w-full overflow-hidden bg-[linear-gradient(180deg,#E8F6FF_0%,#E8F6FF_56%,#1A936F_56%,#1A936F_100%)] max-sm:min-h-0 max-sm:pb-[calc(74cqw-21px)] max-sm:bg-[linear-gradient(180deg,#E8F6FF_0%,#E8F6FF_calc(100%_-_16cqw_+_21px),#1A936F_calc(100%_-_16cqw_+_21px),#1A936F_100%)] min-[900px]:min-h-[calc(80cqw+80px+16cqw)] lg:h-[calc(84.3056cqw+16cqw)] lg:min-h-0"
     >
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden select-none" aria-hidden="true">
         <AdeganKota />
@@ -86,7 +86,7 @@ export default function Hero() {
         </p>
 
         {/* HP: CTA utama besar & jelas (satu tombol hijau penuh), pemilih nomor angkot jadi aksi sekunder */}
-        <div className="hero-muncul mt-6 flex w-full flex-col gap-3 [animation-delay:180ms] sm:hidden">
+        <div className="hidden">
           <Link
             to="/cari"
             className="flex h-14 w-full items-center justify-center gap-2.5 rounded-full bg-primary text-[16.5px] font-bold text-white shadow-[0_12px_28px_rgba(26,147,111,0.38)] transition active:scale-[0.98]"
@@ -118,8 +118,8 @@ export default function Hero() {
         </div>
 
         {/* Pill: cari rute + pilih nomor angkot untuk langsung melihat rutenya (tablet & desktop) */}
-        <div className="hero-muncul mt-4 hidden h-[52px] max-w-full items-center gap-1 rounded-full border border-white/40 bg-hero-pill pr-1.5 pl-5 shadow-sm [animation-delay:180ms] sm:mt-6 sm:inline-flex sm:h-14 lg:mt-6">
-          <Link to="/cari" className="inline-flex items-center gap-2.5 text-hero-brown transition-opacity hover:opacity-80">
+        <div className="hero-muncul mt-5 inline-flex h-[52px] max-w-full items-center gap-1 rounded-full border border-white/40 bg-hero-pill pr-1.5 pl-5 shadow-[0_8px_24px_rgba(183,121,31,0.18)] [animation-delay:180ms] max-sm:w-full sm:mt-6 sm:h-14 lg:mt-6">
+          <Link to="/cari" className="inline-flex items-center gap-2.5 text-hero-brown transition-opacity hover:opacity-80 max-sm:flex-1">
             <svg width="16" height="16" viewBox="0 0 17 17" fill="none" className="shrink-0" aria-hidden="true">
               <path
                 d="M14.5 6.9c0 4.84-6.2 8.99-6.2 8.99S2.07 11.75 2.07 6.9a6.22 6.22 0 0 1 12.43 0Z"
