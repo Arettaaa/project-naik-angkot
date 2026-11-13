@@ -8,6 +8,14 @@
       content="Cari rute angkot, lihat titik pindah, dan cek kepadatan jalur angkot di Kota Bogor bersama NAIK."
     />
     <meta name="theme-color" content="#f1faff" />
+    <script>
+      // pasang tema sebelum halaman digambar supaya tidak berkedip terang -> gelap
+      try {
+        var t = localStorage.getItem('naik-tema')
+        if (t !== 'dark' && t !== 'light') t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        document.documentElement.dataset.theme = t
+      } catch (e) {}
+    </script>
     <title>NAIK — Teman Perjalanan Angkot Kota Bogor</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

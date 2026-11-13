@@ -52,6 +52,21 @@ const PESAN_AWAL = {
   tempat_singgah: [],
 }
 
+// Tombol pembuka chat untuk dipasang di tempat lain (mis. slot atas bottom sheet Beranda di HP).
+export function TombolTanyaAi() {
+  return (
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new Event('naik:toggle-kang-angkot'))}
+      aria-label="Tanya Kang Angkot AI"
+      className="inline-flex h-12 items-center gap-2 rounded-full bg-primary px-4 text-[14px] font-semibold text-white shadow-[0_6px_20px_rgba(26,147,111,0.35)] transition active:scale-[0.97]"
+    >
+      <IconChat className="h-5 w-5" />
+      Tanya AI
+    </button>
+  )
+}
+
 function FormatTeks({ teks }) {
   if (!teks) return null
   const parts = String(teks).split(/(\*\*[^*]+\*\*)/g)
@@ -82,6 +97,13 @@ export default function AiChatbot() {
   const [koordinat, setKoordinat] = useState(null)
   const [locLoading, setLocLoading] = useState(false)
   const listRef = useRef(null)
+  const [daftarTerbuka, setDaftarTerbuka] = useState(false) // panel Daftar Rute terbuka -> tombol AI disembunyikan di HP
+
+  useEffect(() => {
+    const ubah = (e) => setDaftarTerbuka(Boolean(e.detail))
+    window.addEventListener('naik:daftar-rute', ubah)
+    return () => window.removeEventListener('naik:daftar-rute', ubah)
+  }, [])
 
   const warnaMap = useMemo(
     () => Object.fromEntries((trayek?.data ?? []).map((t) => [t.kode_trayek, t.warna])),
@@ -101,6 +123,27 @@ export default function AiChatbot() {
   }, [location.pathname, filter?.kode])
 
   const sedangBukaDetailRute = /^\/rute\/[^/]+/.test(location.pathname)
+
+  // Posisi tombol di HP: tiap halaman punya area kosong berbeda supaya tidak bertabrakan dengan panel lain.
+  // /rute/:kode -> kanan atas (panel detail memenuhi bawah); /rute -> kanan bawah di atas tombol lokasi;
+  // /peta -> ada di slot atas bottom sheet; /cari -> disembunyikan (panel hasil memenuhi layar).
+  const posisiHP = sedangBukaDetailRute
+    ? 'max-lg:fixed max-lg:top-3 max-lg:right-3 flex'
+    : location.pathname === '/rute'
+      ? 'max-lg:fixed max-lg:right-3 max-lg:bottom-[104px] flex'
+      : 'max-lg:hidden lg:inline-flex'
+
+  // Dibuka dari tombol "Kang Angkot" di menu bawah (HP) lewat event; Esc menutup panel
+  useEffect(() => {
+    const toggle = () => setBuka((v) => !v)
+    const esc = (e) => e.key === 'Escape' && setBuka(false)
+    window.addEventListener('naik:toggle-kang-angkot', toggle)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('naik:toggle-kang-angkot', toggle)
+      window.removeEventListener('keydown', esc)
+    }
+  }, [])
 
   useEffect(() => {
     if (!buka) return
@@ -203,12 +246,24 @@ export default function AiChatbot() {
 
   return (
     <Floating
-      className={`right-3 bottom-21 z-[1010] flex flex-col items-end lg:bottom-4 ${
+      className={`!z-[1100] flex flex-col items-end lg:bottom-4 ${
         sedangBukaDetailRute ? 'lg:right-[396px]' : 'lg:right-3'
       }`}
     >
+      {/* HP: panel jadi lembar penuh dari bawah (menutup menu bawah) + latar redup; desktop: kartu melayang */}
       {buka && (
-        <Card className="mb-2.5 flex h-[min(520px,calc(100dvh-148px))] w-[min(368px,calc(100vw-24px))] flex-col overflow-hidden">
+        <div
+          aria-hidden="true"
+          onClick={() => setBuka(false)}
+          className="fixed inset-0 bg-black/45 lg:hidden"
+        />
+      )}
+      {buka && (
+        <Card
+          role="dialog"
+          aria-label="Kang Angkot"
+          className="fixed inset-x-2 bottom-2 z-10 flex h-[min(640px,calc(100dvh-72px))] flex-col overflow-hidden !rounded-[26px] pb-[env(safe-area-inset-bottom)] lg:static lg:mb-2.5 lg:h-[min(520px,calc(100dvh-148px))] lg:w-[368px] lg:pb-0"
+        >
           <CardHeader
             title="Kang Angkot"
             subtitle="Asisten rute & tempat singgah Kota Bogor"
@@ -425,7 +480,8 @@ export default function AiChatbot() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Tanya rute atau tempat tujuan…"
-              className="h-11 min-w-0 flex-1 rounded-2xl border border-[#E3E8EA] bg-[#F6F9F9] px-3.5 text-[13.5px] text-dark outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/15"
+              enterKeyHint="send"
+              className="h-11 min-w-0 flex-1 rounded-2xl border border-[#E3E8EA] bg-[#F6F9F9] px-3.5 text-[16px] lg:text-[13.5px] text-dark outline-none transition focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/15"
             />
             <button
               type="submit"
@@ -439,19 +495,24 @@ export default function AiChatbot() {
         </Card>
       )}
 
+      {/* Tombol pembuka. HP: ditaruh di titik bebas per halaman; di /peta & /cari dipakai tombol lain (lihat TombolTanyaAi) */}
       <button
         type="button"
         onClick={() => setBuka((v) => !v)}
         aria-expanded={buka}
         aria-label="Tanya Kang Angkot AI"
-        className={`inline-flex h-12 items-center gap-2.5 rounded-2xl px-4 text-[14.5px] font-semibold shadow-[0_8px_30px_rgba(21,30,44,0.14)] transition active:scale-[0.98] ${
+        className={`items-center gap-2.5 text-[14px] font-semibold shadow-[0_8px_30px_rgba(21,30,44,0.16)] transition active:scale-[0.97] ${posisiHP} h-11 rounded-full px-4 lg:static lg:inline-flex lg:h-12 lg:rounded-2xl lg:text-[14.5px] ${
+          sedangBukaDetailRute ? 'max-lg:w-11 max-lg:justify-center max-lg:px-0' : ''
+        } ${sedangBukaDetailRute && daftarTerbuka ? 'max-lg:!hidden' : ''} ${
           buka
-            ? 'border border-[#E3E8EA] bg-white text-tentang-dark hover:bg-[#F6F9F9]'
+            ? 'max-lg:!hidden border border-[#E3E8EA] bg-white text-tentang-dark hover:bg-[#F6F9F9]'
             : 'bg-primary text-white hover:bg-[#178563]'
         }`}
       >
         <IconChat className="h-5 w-5" />
-        <span>Kang Angkot</span>
+        {/* HP di halaman detail rute: hanya ikon, supaya tidak menabrak tombol "Daftar Rute" */}
+        <span className={sedangBukaDetailRute ? 'lg:hidden max-lg:sr-only' : 'lg:hidden'}>Tanya AI</span>
+        <span className="hidden lg:inline">Kang Angkot</span>
       </button>
     </Floating>
   )

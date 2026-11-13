@@ -5,7 +5,7 @@ import { api } from '../../api/naik'
 import useApi from '../../hooks/useApi'
 import { useDashboard } from '../context'
 import { Floating } from '../ui'
-import { IconRoute } from '../icons'
+import { IconChevronDown, IconRoute } from '../icons'
 import { batas, layarBesar, nomor } from '../lib'
 import RutePopup from '../components/RutePopup'
 import DaftarRute from './DaftarRute'
@@ -21,7 +21,7 @@ export default function RutePanel() {
   const map = useMap()
   const { trayek, rute, muatUlang } = useDashboard()
 
-  const [daftarBuka, setDaftarBuka] = useState(true)
+  const [daftarBuka, setDaftarBuka] = useState(false) // default tertutup: pengguna yang membuka sendiri
   const [detailBuka, setDetailBuka] = useState(true)
   const [ruteId, setRuteId] = useState(null)
   const [popup, setPopup] = useState(null)
@@ -44,6 +44,11 @@ export default function RutePanel() {
   const lainnya = fitur.filter((f) => f !== dipilih)
   const detail = useApi(kode ? () => api.detailTrayek(kode) : null, [kode])
   const arahDetail = detail.data?.rute.find((r) => r.rute_id === dipilih?.properties.rute_id)
+  // beri tahu tombol "Tanya AI" (HP) supaya menyingkir saat daftar rute terbuka
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('naik:daftar-rute', { detail: daftarBuka }))
+    return () => window.dispatchEvent(new CustomEvent('naik:daftar-rute', { detail: false }))
+  }, [daftarBuka])
   const [titikAktif, setTitikAktif] = useState(null)
   const [poiAktif, setPoiAktif] = useState(null)
 
@@ -92,7 +97,7 @@ export default function RutePanel() {
 
   return (
     <>
-      <Floating className="top-3 left-3 right-3 flex max-h-[calc(55%-12px)] flex-col lg:right-auto lg:bottom-3 lg:left-[94px] lg:max-h-none lg:w-[340px]">
+      <Floating className={`top-3 left-3 right-3 ${kode && !daftarBuka ? 'max-lg:right-[64px]' : ''} flex max-h-[calc(55%-12px)] flex-col lg:right-auto lg:bottom-3 lg:left-[94px] lg:max-h-none lg:w-[340px]`}>
         {daftarBuka ? (
           <DaftarRute
             trayek={trayek}
@@ -103,10 +108,26 @@ export default function RutePanel() {
           />
         ) : (
           <button
+            type="button"
             onClick={() => setDaftarBuka(true)}
-            className="inline-flex h-12 w-fit items-center gap-2 rounded-2xl bg-white px-4 text-[15px] font-semibold text-tentang-dark shadow-[0_8px_30px_rgba(21,30,44,0.12)]"
+            aria-expanded="false"
+            aria-label="Buka daftar rute angkot"
+            className="group flex w-fit max-w-full items-center gap-3 rounded-2xl bg-white py-2 pr-3.5 pl-2 text-left shadow-[0_8px_30px_rgba(21,30,44,0.14)] ring-1 ring-primary/15 transition hover:ring-primary/40 active:scale-[0.98]"
           >
-            <IconRoute className="h-4 w-4 text-primary" /> Daftar Rute
+            <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E3F4EC] text-primary">
+              <IconRoute className="h-5 w-5" />
+              <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5" aria-hidden="true">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full border-2 border-white bg-primary" />
+              </span>
+            </span>
+            <span className="min-w-0">
+              <span className="block font-display text-[15px] leading-tight font-bold text-tentang-dark">Daftar Rute</span>
+              <span className="mt-0.5 block text-[12px] leading-tight text-dark/55">
+                {trayek.data?.length ? `${trayek.data.length} rute · ketuk untuk memilih` : 'Ketuk untuk memilih rute'}
+              </span>
+            </span>
+            <IconChevronDown className="h-4 w-4 shrink-0 text-dark/40 transition group-hover:text-primary" />
           </button>
         )}
       </Floating>
