@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Pane, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useDashboard } from '../context'
+import { TombolTanyaAi } from '../../components/AiChatbot'
 import { BottomSheet, Card, Floating } from '../ui'
 import { useLayarBesar } from '../hooks'
 import { IconChevronDown, IconChevronUp, IconX, IconLocate } from '../icons'
@@ -167,13 +168,16 @@ export default function BerandaPanel() {
             terbuka={sheetBuka}
             setTerbuka={setSheetBuka}
             atas={
-              <button
-                aria-label="Lokasi saya"
-                onClick={lokasiSaya}
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-dark shadow-[0_6px_20px_rgba(21,30,44,0.18)]"
-              >
-                <IconLocate />
-              </button>
+              <div className="flex items-center justify-end gap-2">
+                <TombolTanyaAi />
+                <button
+                  aria-label="Lokasi saya"
+                  onClick={lokasiSaya}
+                  className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-dark shadow-[0_6px_20px_rgba(21,30,44,0.18)]"
+                >
+                  <IconLocate />
+                </button>
+              </div>
             }
           >
             <div className={`naik-scroll overflow-y-auto px-4 pb-3 ${sheetBuka ? 'max-h-[52dvh]' : ''}`}>

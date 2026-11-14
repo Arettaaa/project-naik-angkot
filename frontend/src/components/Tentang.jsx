@@ -72,13 +72,13 @@ export default function Tentang() {
             <PetaBogorVektor
               viewBox="130 70 500 710"
               alt="Peta wilayah Kota Bogor"
-              className="h-auto w-[min(80vw,270px)] select-none sm:w-[280px] md:w-[280px]"
+              className="vektor-peta h-auto w-[min(80vw,270px)] select-none sm:w-[280px] md:w-[280px]"
             />
           </div>
 
           {/* Peta Bogor untuk Desktop (mempertahankan rasio dan koordinat asli Figma) */}
           <div data-muncul="1" className="hidden lg:block lg:absolute lg:left-[47.9cqw] lg:top-[9.72cqw] lg:w-[52.2cqw] lg:max-w-none z-20">
-            <PetaBogorVektor alt="Peta wilayah Kota Bogor" className="h-auto w-full select-none" />
+            <PetaBogorVektor alt="Peta wilayah Kota Bogor" className="vektor-peta h-auto w-full select-none" />
           </div>
         </div>
       </div>

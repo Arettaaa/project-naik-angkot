@@ -1,0 +1,173 @@
+/* =====================================================================
+   Tema gelap NAIK — hanya untuk DASHBOARD PETA (landing page selalu terang).
+   Gaya: "shell gelap + kartu mint terang" (rail & peta gelap-hijau Musgo,
+   panel/kartu mint-putih dengan teks gelap, aksen hijau daun & lime).
+   Palet Musgo: #14311C · #2E6B2C · #6BA83E · #D3E8A0, dasar #0B130E.
+   Semua aturan di-scope ke `.naik-dashboard`.
+   ===================================================================== */
+
+html.tema-ganti .naik-dashboard,
+html.tema-ganti .naik-dashboard * {
+  transition:
+    background-color 300ms ease,
+    border-color 300ms ease,
+    color 300ms ease,
+    fill 300ms ease !important;
+}
+
+html[data-theme='dark'] .naik-dashboard {
+  background-color: #0b130e;
+
+  --color-dark: #0f1a13;
+  --color-primary: #2d8a3c;
+  --color-tentang-dark: #0f1a13;
+  --color-hero-brown: #0f1a13;
+  --color-border-nav: rgba(20, 49, 28, 0.14);
+  --color-mist: #e1ecdf;
+}
+
+/* ---------- Kartu & panel: mint-putih (kontras dengan peta gelap) ---------- */
+html[data-theme='dark'] .naik-dashboard [class~='bg-white'],
+html[data-theme='dark'] .naik-dashboard [class~='bg-white/95'],
+html[data-theme='dark'] .naik-dashboard [class~='bg-white/90'],
+html[data-theme='dark'] .naik-dashboard [class~='bg-white/80'] {
+  background-color: #f4f8f4;
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 18px 44px -14px rgba(0, 0, 0, 0.6);
+}
+
+/* permukaan kedua: mint lembut (seperti kartu "99,681m" pada referensi) */
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#F6F9F9]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#F1F4F5]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#F3F6F6]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#F8FAFA]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#F1F6F6]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#FBFDFF]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#F9FCFC]'] {
+  background-color: #e7f0e6;
+}
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#EAF4EE]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#E3F4EC]'] {
+  background-color: #d5e8cf;
+  color: #1d5a2a;
+}
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#EDF1F2]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#E3E8EA]'],
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#D5DEE0]'] {
+  background-color: #cddccb;
+}
+html[data-theme='dark'] .naik-dashboard [class*='border-[#E3E8EA]'],
+html[data-theme='dark'] .naik-dashboard [class*='border-[#EDF1F2]'],
+html[data-theme='dark'] .naik-dashboard [class*='border-[#E5ECEC]'],
+html[data-theme='dark'] .naik-dashboard [class*='border-[#EDF2F2]'],
+html[data-theme='dark'] .naik-dashboard [class*='border-[#D5E2E4]'],
+html[data-theme='dark'] .naik-dashboard [class*='border-[#ECF1F1]'],
+html[data-theme='dark'] .naik-dashboard [class*='border-[#E6EEEE]'],
+html[data-theme='dark'] .naik-dashboard [class*='border-[#DCE8E8]'] {
+  border-color: #d3e1d1;
+}
+
+/* teks: hitam-hijau, bukan biru-teal */
+html[data-theme='dark'] .naik-dashboard [class*='text-[#0D404F]'],
+html[data-theme='dark'] .naik-dashboard [class*='text-[#14532D]'],
+html[data-theme='dark'] .naik-dashboard [class*='text-[#214B38]'] {
+  color: #0f1a13;
+}
+html[data-theme='dark'] .naik-dashboard [class*='text-[#2F6B4F]'] {
+  color: #2d8a3c;
+}
+html[data-theme='dark'] .naik-dashboard [class*='border-[#2F6B4F]'] {
+  border-color: rgba(45, 138, 60, 0.45);
+}
+html[data-theme='dark'] .naik-dashboard [class*='bg-[#FFF3D6]'] {
+  background-color: #eef3c9;
+  border-color: #d9e39a;
+  color: #4d5a0a;
+}
+html[data-theme='dark'] .naik-dashboard input,
+html[data-theme='dark'] .naik-dashboard select,
+html[data-theme='dark'] .naik-dashboard textarea {
+  color: #0f1a13;
+}
+html[data-theme='dark'] .naik-dashboard ::placeholder {
+  color: #7d907f;
+}
+
+/* tombol utama: hijau daun berpendar halus */
+html[data-theme='dark'] .naik-dashboard button[class*='bg-primary'],
+html[data-theme='dark'] .naik-dashboard a[class*='bg-primary'] {
+  box-shadow: 0 8px 20px -6px rgba(45, 138, 60, 0.55);
+}
+
+/* ---------- Rail menu: sisi gelap gradien (seperti sidebar referensi) ---------- */
+html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] {
+  background: linear-gradient(180deg, #14241a 0%, #0b130e 100%) !important;
+  border: 1px solid rgba(107, 168, 62, 0.22) !important;
+  box-shadow: 0 18px 44px -12px rgba(0, 0, 0, 0.75) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] > a:not([aria-current]):not(:first-child),
+html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] a[aria-label]:not([aria-current='page']):not([title]) {
+  color: rgba(228, 240, 217, 0.6) !important;
+}
+html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] a[aria-label]:not([aria-current='page']):not([title]):hover {
+  background-color: rgba(107, 168, 62, 0.14) !important;
+  color: #f1f9e8 !important;
+}
+/* menu aktif: desktop = kotak gelap terang-hijau, HP = pil lime */
+html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] a[aria-current='page'] {
+  background-color: #1f3526 !important;
+  color: #d3e8a0 !important;
+  box-shadow: inset 0 0 0 1px rgba(107, 168, 62, 0.35) !important;
+}
+@media (max-width: 1023px) {
+  html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] a[aria-current='page'] {
+    background-color: #d3e8a0 !important;
+    color: #0f1a13 !important;
+    box-shadow: 0 8px 20px -6px rgba(211, 232, 160, 0.4) !important;
+  }
+}
+html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] [class*='bg-[#E3E8EA]'] {
+  background-color: rgba(228, 240, 217, 0.14);
+}
+html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] [class*='text-dark'] {
+  color: rgba(228, 240, 217, 0.5);
+}
+/* logo bus di rail */
+html[data-theme='dark'] .naik-dashboard nav[aria-label='Menu dashboard'] a[title='Halaman utama'] {
+  background-color: #2d8a3c !important;
+  color: #fff !important;
+  box-shadow: 0 6px 18px -4px rgba(45, 138, 60, 0.7) !important;
+}
+
+/* ---------- Peta: gelap hijau, rute tetap berwarna ---------- */
+html[data-theme='dark'] .naik-dashboard .leaflet-tile-pane {
+  filter: invert(1) grayscale(1) brightness(0.8) contrast(0.95) sepia(0.65) hue-rotate(62deg) saturate(1.5);
+}
+html[data-theme='dark'] .naik-dashboard .leaflet-container {
+  background: #0d1a11;
+}
+html[data-theme='dark'] .naik-dashboard .leaflet-control-attribution {
+  background: rgba(11, 19, 14, 0.78);
+  color: #8fa893;
+}
+html[data-theme='dark'] .naik-dashboard .leaflet-control-attribution a {
+  color: #9bd06a;
+}
+
+/* ---------- Popup (mint terang) & tooltip (pil gelap) ---------- */
+html[data-theme='dark'] .naik-popup .leaflet-popup-content-wrapper,
+html[data-theme='dark'] .naik-popup .leaflet-popup-tip {
+  background: #f4f8f4;
+  color: #0f1a13;
+  box-shadow: 0 18px 44px -12px rgba(0, 0, 0, 0.65);
+}
+html[data-theme='dark'] .naik-tag-jalan.leaflet-tooltip {
+  background: #0f1a13;
+  color: #d3e8a0;
+  border-color: rgba(107, 168, 62, 0.4);
+}
+html[data-theme='dark'] .naik-tag-jalan.leaflet-tooltip::before {
+  border-top-color: #0f1a13;
+}

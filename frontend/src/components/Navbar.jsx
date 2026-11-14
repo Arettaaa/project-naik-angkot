@@ -83,13 +83,15 @@ export default function Navbar() {
         {/* Spacer kanan */}
         <div className="flex-1" />
 
-        {/* Tombol CTA */}
-        <Link
-          to="/peta"
-          className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2.5 text-[18px] font-semibold leading-5 text-white transition-colors hover:bg-[#178563]"
-        >
-          Buka Peta
-        </Link>
+        {/* Tema + tombol CTA */}
+        <div className="flex items-center gap-4">
+          <Link
+            to="/peta"
+            className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2.5 text-[18px] font-semibold leading-5 text-white transition-colors hover:bg-[#178563]"
+          >
+            Buka Peta
+          </Link>
+        </div>
       </nav>
 
       {/* ===== MOBILE NAVBAR (< 1024px) ===== */}
