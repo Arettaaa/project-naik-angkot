@@ -155,6 +155,7 @@ export default function AiChatbot() {
         ...(koordinat ? { lat: koordinat.lat, lon: koordinat.lon } : {}),
       }
       const res = await api.aiRekomendasi(payload)
+      console.log('HASIL AI ANGKOT:', res)
       setPesanList((prev) => [
         ...prev,
         {

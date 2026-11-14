@@ -1,61 +1,61 @@
 ﻿kode_trayek,arah,asal,tujuan,panjang_m,status,jalan_artikel_dilewati,persen,tidak_dilewati,catatan
-Trayek 01,Berangkat,Cipinang Gading,Perum Yasmin,11286.6,ok,14/14,100.0,,tidak terpetakan: Jl. Soemantadiredja
-Trayek 01,Pulang,Perum Yasmin,Cipinang Gading,16663.5,ok,20/20,100.0,,tidak terpetakan: Jl. Soemantadiredja
-Trayek 02,Berangkat,Warung Nangka,Bogor Trade Mall,12136.3,cek:loncat,6/6,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 02,Pulang,Bogor Trade Mall,Warung Nangka,12254.0,cek:loncat,6/6,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 03,Berangkat,Cimahpar,Bogor Trade Mall,7943.9,cek:dua_arah,8/8,100.0,,
-Trayek 03,Pulang,Bogor Trade Mall,Cimahpar,8516.2,ok,7/7,100.0,,
-Trayek 04,Berangkat,Cimahpar,Warung Jambu,6641.8,ok,8/8,100.0,,
-Trayek 04,Pulang,Warung Jambu,Cimahpar,11406.2,ok,12/12,100.0,,
-Trayek 05,Berangkat,Ciheuleut,Bogor Trade Mall,3961.9,cek:dua_arah,7/7,100.0,,
-Trayek 05,Pulang,Bogor Trade Mall,Ciheuleut,5816.3,ok,6/6,100.0,,
-Trayek 06,Berangkat,Baranangsiang Indah,Ciparigi,12356.7,ok,10/12,83.3,Ciheuleut; Jl. Ciheuleut Pakuan,
-Trayek 06,Pulang,Ciparigi,Baranangsiang Indah,11726.0,ok,12/12,100.0,,
-Trayek 07,Berangkat,Terminal Bubulak,Ciparigi,18273.0,cek:jauh,12/12,100.0,,
-Trayek 07,Pulang,Ciparigi,Terminal Bubulak,15681.4,cek:jauh,15/15,100.0,,
-Trayek 08,Berangkat,Taman Pajajaran,Terminal Merdeka,8995.7,ok,12/13,92.3,Simp. Bantar Kemang,
-Trayek 08,Pulang,Terminal Merdeka,Taman Pajajaran,13263.6,ok,17/17,100.0,,
-Trayek 09,Berangkat,Baranangsiang Indah,Pasar Baru Bogor,3464.6,ok,9/10,90.0,Jl. Kol. H. Achmad Syam,
-Trayek 09,Pulang,Pasar Baru Bogor,Baranangsiang Indah,5776.6,ok,8/10,80.0,Jl. Roda; Jl. Kol. H. Achmad Syam,
-Trayek 10,Berangkat,Cimanggu Permai,Pasar Anyar,3354.6,ok,8/8,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 10,Pulang,Pasar Anyar,Cimanggu Permai,3098.8,ok,6/6,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 11,Berangkat,Curug,Pasar Anyar,8578.0,ok,12/12,100.0,,
-Trayek 11,Pulang,Pasar Anyar,Curug,9651.0,ok,10/10,100.0,,
-Trayek 12,Berangkat,Terminal Bubulak,Pasar Anyar,11113.4,ok,11/11,100.0,,
-Trayek 12,Pulang,Pasar Anyar,Terminal Bubulak,9578.1,ok,9/9,100.0,,
-Trayek 13,Berangkat,Mutiara Bogor Raya,Bogor Trade Mall,5410.9,cek:dua_arah,10/10,100.0,,
-Trayek 13,Pulang,Bogor Trade Mall,Mutiara Bogor Raya,7310.7,ok,8/8,100.0,,
-Trayek 14,Berangkat,Sukasari,Terminal Bubulak,12325.7,ok,12/12,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 14,Pulang,Terminal Bubulak,Sukasari,12940.4,ok,13/13,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 15,Berangkat,Terminal Merdeka,Situgede,8875.9,ok,9/9,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 15,Pulang,Situgede,Terminal Merdeka,11054.7,ok,12/12,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 16,Berangkat,Stasiun Bogor,Terminal Bubulak,8876.6,ok,8/9,88.9,Jl. Darul Qur'an,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 16,Pulang,Terminal Bubulak,Stasiun Bogor,7508.8,ok,9/10,90.0,Jl. Darul Qur'an,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 17,Berangkat,Pasar Anyar,Salabenda,11516.4,ok,7/7,100.0,,
-Trayek 17,Pulang,Salabenda,Pasar Anyar,14063.5,ok,10/10,100.0,,
-Trayek 18,Berangkat,Pasar Anyar,Villa Mutiara,14021.3,ok,8/8,100.0,,
-Trayek 18,Pulang,Villa Mutiara,Pasar Anyar,16256.8,ok,12/12,100.0,,
-Trayek 19,Berangkat,Bina Marga,Pomad,8435.4,ok,9/9,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 19,Pulang,Pomad,Bina Marga,8737.5,ok,8/8,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 20,Berangkat,Bina Marga,Pomad,9588.1,cek:loncat,9/9,100.0,,dipaksa lewat: Jl. Rd. Hanafiah
-Trayek 20,Pulang,Pomad,Bina Marga,11646.5,cek:loncat,9/9,100.0,,
-Trayek 21,Berangkat,Mulyaharja,Bogor Trade Mall,4570.6,ok,5/5,100.0,,tidak terpetakan: Mulyaharja
-Trayek 21,Pulang,Bogor Trade Mall,Mulyaharja,2631.7,ok,4/4,100.0,,tidak terpetakan: Mulyaharja
-Trayek 22,Berangkat,Terminal Bubulak,Kencana,9301.2,ok,5/5,100.0,,
-Trayek 22,Pulang,Kencana,Terminal Bubulak,11050.6,ok,5/5,100.0,,
-Trayek 23,Berangkat,Taman Griya Kencana,Pasar Anyar,13654.1,ok,12/12,100.0,,
-Trayek 23,Pulang,Pasar Anyar,Taman Griya Kencana,11790.5,ok,9/9,100.0,,
-Trayek 24,Berangkat,Pondok Rumput,Pasar Anyar,4590.6,ok,7/7,100.0,,
-Trayek 24,Pulang,Pasar Anyar,Pondok Rumput,4362.5,ok,7/7,100.0,,
-Trayek 25,Berangkat,Bogor Trade Mall,Warung Jambu,5674.0,ok,9/9,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 25,Pulang,Warung Jambu Timur,Bogor Trade Mall,7605.5,cek:dua_arah,9/9,100.0,,penghubung antar-jalan dipandu garis peta Moovit
-Trayek 26,Berangkat,Terminal Merdeka,Villa Mutiara,14351.3,ok,10/12,83.3,Cijahe; Cideres,
-Trayek 26,Pulang,Villa Mutiara,Terminal Merdeka,19556.4,ok,12/14,85.7,Cideres; Cijahe,
-Trayek 27,Berangkat,Jl. Buntar,Sukasari,8363.1,ok,7/7,100.0,,
-Trayek 27,Pulang,Sukasari,Jl. Buntar,7586.6,ok,7/7,100.0,,
-Trayek 28,Berangkat,Pabuaran,Jl. Lawang Saketeng,6872.2,ok,8/8,100.0,,tidak terpetakan: Jl. Pamoyanan
-Trayek 28,Pulang,Jl. Lawang Saketeng,Pabuaran,7284.0,ok,8/8,100.0,,tidak terpetakan: Jl. Pamoyanan
-Trayek 29,Berangkat,Pabuaran,Terminal Merdeka,7601.2,ok,9/9,100.0,,
+Trayek 01,Berangkat,Cipinang Gading,Perum Yasmin,11286.6,ok,14/14,100,,tidak terpetakan: Jl. Soemantadiredja
+Trayek 01,Pulang,Perum Yasmin,Cipinang Gading,16663.5,ok,20/20,100,,tidak terpetakan: Jl. Soemantadiredja
+Trayek 02,Berangkat,Warung Nangka,Bogor Trade Mall,12136.3,cek:loncat,6-Jun,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 02,Pulang,Bogor Trade Mall,Warung Nangka,12254,cek:loncat,6-Jun,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 03,Berangkat,Cimahpar,Bogor Trade Mall,7943.9,cek:dua_arah,8-Aug,100,,
+Trayek 03,Pulang,Bogor Trade Mall,Cimahpar,8516.2,ok,7-Jul,100,,
+Trayek 04,Berangkat,Cimahpar,Warung Jambu,6641.8,ok,8-Aug,100,,
+Trayek 04,Pulang,Warung Jambu,Cimahpar,11406.2,ok,12-Dec,100,,
+Trayek 05,Berangkat,Ciheuleut,Bogor Trade Mall,3961.9,cek:dua_arah,7-Jul,100,,
+Trayek 05,Pulang,Bogor Trade Mall,Ciheuleut,5816.3,ok,6-Jun,100,,
+Trayek 06,Berangkat,Baranangsiang Indah,Ciparigi,12356.7,ok,12-Oct,83.3,Ciheuleut; Jl. Ciheuleut Pakuan,
+Trayek 06,Pulang,Ciparigi,Baranangsiang Indah,11726,ok,12-Dec,100,,
+Trayek 07,Berangkat,Terminal Bubulak,Ciparigi,18273,cek:jauh,12-Dec,100,,
+Trayek 07,Pulang,Ciparigi,Terminal Bubulak,15681.4,cek:jauh,15/15,100,,
+Trayek 08,Berangkat,Taman Pajajaran,Terminal Merdeka,8995.7,ok,13-Dec,92.3,Simp. Bantar Kemang,
+Trayek 08,Pulang,Terminal Merdeka,Taman Pajajaran,13263.6,ok,17/17,100,,
+Trayek 09,Berangkat,Baranangsiang Indah,Pasar Baru Bogor,3464.6,ok,10-Sep,90,Jl. Kol. H. Achmad Syam,
+Trayek 09,Pulang,Pasar Baru Bogor,Baranangsiang Indah,5776.6,ok,10-Aug,80,Jl. Roda; Jl. Kol. H. Achmad Syam,
+Trayek 10,Berangkat,Cimanggu Permai,Pasar Anyar,3354.6,ok,8-Aug,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 10,Pulang,Pasar Anyar,Cimanggu Permai,3098.8,ok,6-Jun,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 11,Berangkat,Curug,Pasar Anyar,8578,ok,12-Dec,100,,
+Trayek 11,Pulang,Pasar Anyar,Curug,9651,ok,10-Oct,100,,
+Trayek 12,Berangkat,Terminal Bubulak,Pasar Anyar,11113.4,ok,11-Nov,100,,
+Trayek 12,Pulang,Pasar Anyar,Terminal Bubulak,9578.1,ok,9-Sep,100,,
+Trayek 13,Berangkat,Mutiara Bogor Raya,Bogor Trade Mall,5410.9,cek:dua_arah,10-Oct,100,,
+Trayek 13,Pulang,Bogor Trade Mall,Mutiara Bogor Raya,7310.7,ok,8-Aug,100,,
+Trayek 14,Berangkat,Sukasari,Terminal Bubulak,12325.7,ok,12-Dec,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 14,Pulang,Terminal Bubulak,Sukasari,12940.4,ok,13/13,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 15,Berangkat,Terminal Merdeka,Situgede,8875.9,ok,9-Sep,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 15,Pulang,Situgede,Terminal Merdeka,11054.7,ok,12-Dec,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 16,Berangkat,Stasiun Bogor,Terminal Bubulak,8876.6,ok,9-Aug,88.9,Jl. Darul Qur'an,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 16,Pulang,Terminal Bubulak,Stasiun Bogor,7508.8,ok,10-Sep,90,Jl. Darul Qur'an,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 17,Berangkat,Pasar Anyar,Salabenda,11516.4,ok,7-Jul,100,,
+Trayek 17,Pulang,Salabenda,Pasar Anyar,14063.5,ok,10-Oct,100,,
+Trayek 18,Berangkat,Pasar Anyar,Villa Mutiara,14021.3,ok,8-Aug,100,,
+Trayek 18,Pulang,Villa Mutiara,Pasar Anyar,16256.8,ok,12-Dec,100,,
+Trayek 19,Berangkat,Bina Marga,Pomad,8435.4,ok,9-Sep,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 19,Pulang,Pomad,Bina Marga,8737.5,ok,8-Aug,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 20,Berangkat,Bina Marga,Pomad,9588.1,cek:loncat,9-Sep,100,,dipaksa lewat: Jl. Rd. Hanafiah
+Trayek 20,Pulang,Pomad,Bina Marga,11646.5,cek:loncat,9-Sep,100,,
+Trayek 21,Berangkat,Mulyaharja,Bogor Trade Mall,4570.6,ok,5-May,100,,tidak terpetakan: Mulyaharja
+Trayek 21,Pulang,Bogor Trade Mall,Mulyaharja,2631.7,ok,4-Apr,100,,tidak terpetakan: Mulyaharja
+Trayek 22,Berangkat,Terminal Bubulak,Kencana,9301.2,ok,5-May,100,,
+Trayek 22,Pulang,Kencana,Terminal Bubulak,11050.6,ok,5-May,100,,
+Trayek 23,Berangkat,Taman Griya Kencana,Pasar Anyar,13654.1,ok,12-Dec,100,,
+Trayek 23,Pulang,Pasar Anyar,Taman Griya Kencana,11790.5,ok,9-Sep,100,,
+Trayek 24,Berangkat,Pondok Rumput,Pasar Anyar,4590.6,ok,7-Jul,100,,
+Trayek 24,Pulang,Pasar Anyar,Pondok Rumput,4362.5,ok,7-Jul,100,,
+Trayek 25,Berangkat,Bogor Trade Mall,Warung Jambu,5674,ok,9-Sep,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 25,Pulang,Warung Jambu Timur,Bogor Trade Mall,7605.5,cek:dua_arah,9-Sep,100,,penghubung antar-jalan dipandu garis peta Moovit
+Trayek 26,Berangkat,Terminal Merdeka,Villa Mutiara,14351.3,ok,12-Oct,83.3,Cijahe; Cideres,
+Trayek 26,Pulang,Villa Mutiara,Terminal Merdeka,19556.4,ok,14-Dec,85.7,Cideres; Cijahe,
+Trayek 27,Berangkat,Jl. Buntar,Sukasari,8363.1,ok,7-Jul,100,,
+Trayek 27,Pulang,Sukasari,Jl. Buntar,7586.6,ok,7-Jul,100,,
+Trayek 28,Berangkat,Pabuaran,Jl. Lawang Saketeng,6872.2,ok,8-Aug,100,,tidak terpetakan: Jl. Pamoyanan
+Trayek 28,Pulang,Jl. Lawang Saketeng,Pabuaran,7284,ok,8-Aug,100,,tidak terpetakan: Jl. Pamoyanan
+Trayek 29,Berangkat,Pabuaran,Terminal Merdeka,7601.2,ok,9-Sep,100,,
 Trayek 29,Pulang,Terminal Merdeka,Pabuaran,17257.5,ok,16/17,94.1,Stasiun Bogor,
-Trayek 30,Berangkat,Warung Jambu Timur,Bogor Trade Mall,5768.8,ok,8/8,100.0,,Jl. Kumbang ditambahkan sesuai SK (ruas OSM 902617408) - lewat sisi SV IPB
-Trayek 30,Pulang,Bogor Trade Mall,Warung Jambu,6328.3,ok,10/10,100.0,,
+Trayek 30,Berangkat,Warung Jambu Timur,Bogor Trade Mall,5768.8,ok,8-Aug,100,,Jl. Kumbang ditambahkan sesuai SK (ruas OSM 902617408) - lewat sisi SV IPB
+Trayek 30,Pulang,Bogor Trade Mall,Warung Jambu,6328.3,ok,10-Oct,100,,
