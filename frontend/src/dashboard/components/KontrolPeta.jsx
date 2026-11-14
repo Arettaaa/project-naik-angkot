@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { CircleMarker, useMap, useMapEvents } from 'react-leaflet'
 import { Floating } from '../ui'
 import { IconLocate, IconMinus, IconPlus } from '../icons'
+import { LegendaHp } from './LegendaPeta'
 
 const TOMBOL =
   'flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-dark shadow-[0_6px_20px_rgba(21,30,44,0.14)] transition hover:bg-[#F3F6F6]'
@@ -18,7 +19,8 @@ export default function KontrolPeta() {
 
   return (
     <>
-      <Floating className={`right-3 bottom-24 flex-col gap-2 ${pathname === '/rute' ? 'max-lg:!bottom-[164px]' : ''} lg:bottom-20 ${sedangDetailRute ? 'lg:right-[396px]' : 'lg:right-3'} ${beranda ? 'hidden lg:flex' : 'flex'}`}>
+      <Floating className={`right-3 bottom-24 flex-col gap-2 ${pathname === '/rute' ? 'max-lg:!bottom-[164px]' : ''} ${sedangDetailRute ? 'max-lg:!bottom-[calc(48%+104px)]' : ''} lg:bottom-20 ${sedangDetailRute ? 'lg:right-[396px]' : 'lg:right-3'} ${beranda ? 'hidden lg:flex' : 'flex'}`}>
+        <LegendaHp />
         <button aria-label="Perbesar" className={`${TOMBOL} hidden lg:flex`} onClick={() => map.zoomIn()}>
           <IconPlus />
         </button>

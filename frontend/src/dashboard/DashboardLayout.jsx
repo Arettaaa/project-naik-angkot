@@ -6,6 +6,7 @@ import { PUSAT_BOGOR } from '../data/tempat'
 import { DashboardCtx } from './context'
 import RailMenu from './components/RailMenu'
 import KontrolPeta from './components/KontrolPeta'
+import LegendaPeta from './components/LegendaPeta'
 import BatasKota from './components/BatasKota'
 import AiChatbot from '../components/AiChatbot'
 import { warnaTrayek } from './warna'
@@ -128,6 +129,7 @@ export default function DashboardLayout() {
           <BatasKota />
           <RailMenu />
           <KontrolPeta />
+          <LegendaPeta />
           <AiChatbot />
           <Outlet />
         </MapContainer>

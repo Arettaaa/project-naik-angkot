@@ -10,7 +10,6 @@ import { IconChevronDown, IconChevronUp, IconX, IconLocate } from '../icons'
 import { batas, nomor } from '../lib'
 import RutePopup from '../components/RutePopup'
 import RuasPopup from '../components/RuasPopup'
-import LegendaPeta from '../components/LegendaPeta'
 import CariTujuan from './CariTujuan'
 import PilihRute, { RuteTerpilih } from './PilihRute'
 import TombolLayer from './TombolLayer'
@@ -195,8 +194,6 @@ export default function BerandaPanel() {
           </BottomSheet>
         </>
       )}
-
-      <LegendaPeta />
 
       {(layers.jalan || layers.kepadatan) && (
         <LayerJalan
