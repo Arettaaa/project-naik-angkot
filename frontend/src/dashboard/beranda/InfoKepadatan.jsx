@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../api/naik'
 import { barisJalur, fmtKm, ringkasKota, ringkasRute } from '../kepadatan'
-import { KEPADATAN, kepadatanOf } from '../warna'
+import { KEPADATAN, kepadatanOf, warnaTrayek } from '../warna'
 import { nomor } from '../lib'
 import { NomorChip } from '../ui'
 import { nomorTampil } from '../nomorWarga'
@@ -63,10 +63,27 @@ const Judul = ({ eyebrow, children }) => (
   </div>
 )
 
+// Nomor trayek yang bisa diketuk untuk menampilkan jalurnya di peta.
+function ChipTrayek({ kode, aktif, onClick }) {
+  const warna = warnaTrayek(kode)
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={aktif ? `Sembunyikan jalur ${nomorTampil(kode)}` : `Tampilkan jalur ${nomorTampil(kode)} di peta`}
+      className="inline-flex h-7 min-w-[30px] items-center justify-center rounded-lg px-2 font-display text-[12.5px] leading-none font-bold transition"
+      style={aktif ? { backgroundColor: warna, color: '#fff' } : { backgroundColor: warna + '1A', color: warna, boxShadow: `inset 0 0 0 1px ${warna}59` }}
+    >
+      {nomorTampil(kode)}
+    </button>
+  )
+}
+
 // ---------- ringkasan kota ----------
-function RingkasKota({ data, onFokusJalan, ringkas }) {
+function RingkasKota({ data, onFokusJalan, onPilihTrayek, dipilih = [], ringkas }) {
   const r = useMemo(() => ringkasKota(data), [data])
   const maks = r.terpadat[0]?.maks ?? 1
+  const [buka, setBuka] = useState(null) // nama jalan yang daftar trayeknya dibuka
   return (
     <div>
       <Judul eyebrow="Informasi kepadatan">Jalur angkot Kota Bogor</Judul>
@@ -86,7 +103,14 @@ function RingkasKota({ data, onFokusJalan, ringkas }) {
               <ol className="space-y-1">
                 {r.terpadat.map((j, i) => (
                   <li key={j.nama}>
-                    <button onClick={() => onFokusJalan(j.nama)} className="group flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition hover:bg-[#F4F7F7]">
+                    <button
+                      onClick={() => {
+                        onFokusJalan(j.nama)
+                        setBuka((b) => (b === j.nama ? null : j.nama))
+                      }}
+                      aria-expanded={buka === j.nama}
+                      className="group flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition hover:bg-[#F4F7F7]"
+                    >
                       <span className="w-4 text-center font-display text-[14px] font-bold text-dark/35">{i + 1}</span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13.5px] font-semibold text-dark group-hover:text-primary">{j.nama}</span>
@@ -96,6 +120,16 @@ function RingkasKota({ data, onFokusJalan, ringkas }) {
                       </span>
                       <Pil tingkat={j.tingkat}>{j.maks} rute</Pil>
                     </button>
+                    {buka === j.nama && j.kode.length > 0 && (
+                      <div className="mb-2 pr-2 pl-9">
+                        <p className="mb-1.5 text-[11.5px] text-dark/55">Angkot yang lewat sini:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {j.kode.map((k) => (
+                            <ChipTrayek key={k} kode={k} aktif={dipilih.includes(k)} onClick={() => onPilihTrayek?.(k)} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ol>
@@ -221,7 +255,7 @@ function JalurRute({ data, t, ringkas }) {
 }
 
 // Panel info kepadatan: ringkasan kota (belum pilih rute) atau diagram jalur rute terpilih.
-export default function InfoKepadatan({ kepadatan, trayek, dipilih, onFokusJalan, ringkas = false }) {
+export default function InfoKepadatan({ kepadatan, trayek, dipilih, onFokusJalan, onPilihTrayek, ringkas = false }) {
   const [aktif, setAktif] = useState(null)
   const semua = trayek.data && dipilih.length === trayek.data.length // semua dipilih = sama dengan ringkasan kota
   const list = semua ? [] : (trayek.data ?? []).filter((t) => dipilih.includes(t.kode_trayek))
@@ -229,7 +263,7 @@ export default function InfoKepadatan({ kepadatan, trayek, dipilih, onFokusJalan
 
   if (kepadatan.loading || !kepadatan.data) return <p className="text-[13px] text-dark/55">{kepadatan.error ? 'Data kepadatan gagal dimuat.' : 'Memuat data kepadatan…'}</p>
 
-  if (!t) return <RingkasKota data={kepadatan.data} onFokusJalan={onFokusJalan} ringkas={ringkas} />
+  if (!t) return <RingkasKota data={kepadatan.data} onFokusJalan={onFokusJalan} onPilihTrayek={onPilihTrayek} dipilih={dipilih} ringkas={ringkas} />
   return (
     <div>
       {list.length > 1 && !ringkas && (

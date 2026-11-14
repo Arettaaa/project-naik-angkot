@@ -10,6 +10,7 @@ import { IconChevronDown, IconChevronUp, IconX, IconLocate } from '../icons'
 import { batas, nomor } from '../lib'
 import RutePopup from '../components/RutePopup'
 import RuasPopup from '../components/RuasPopup'
+import LegendaPeta from '../components/LegendaPeta'
 import CariTujuan from './CariTujuan'
 import PilihRute, { RuteTerpilih } from './PilihRute'
 import TombolLayer from './TombolLayer'
@@ -88,7 +89,7 @@ export default function BerandaPanel() {
   const pilihRute = (p) => (
     <PilihRute trayek={trayek} dipilih={dipilih} toggle={toggle} hapus={hapus} pilihSemua={pilihSemua} onRetry={muatUlang} jumlahTampil={ruteTampil?.features.length} {...p} />
   )
-  const info = (p) => <InfoKepadatan kepadatan={kepadatan} trayek={trayek} dipilih={dipilih} onFokusJalan={fokusJalan} {...p} />
+  const info = (p) => <InfoKepadatan kepadatan={kepadatan} trayek={trayek} dipilih={dipilih} onFokusJalan={fokusJalan} onPilihTrayek={toggle} {...p} />
 
   return (
     <>
@@ -195,6 +196,8 @@ export default function BerandaPanel() {
         </>
       )}
 
+      <LegendaPeta />
+
       {(layers.jalan || layers.kepadatan) && (
         <LayerJalan
           data={kepadatan.data}
@@ -221,7 +224,16 @@ export default function BerandaPanel() {
         />
       )}
       </Pane>
-      <RuasPopup posisi={ruas?.posisi} ruas={ruas?.props} onClose={() => setRuas(null)} />
+      <RuasPopup
+        posisi={ruas?.posisi}
+        ruas={ruas?.props}
+        onClose={() => setRuas(null)}
+        dipilih={dipilih}
+        onPilihTrayek={(kode) => {
+          toggle(kode)
+          setLayers((l) => (l.kepadatan ? l : { ...l, rute: true }))
+        }}
+      />
       <RutePopup
         posisi={rutePop?.posisi}
         rute={rutePop?.props}

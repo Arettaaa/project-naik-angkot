@@ -1,14 +1,20 @@
 import { Popup } from 'react-leaflet'
 import { IconSignpost } from '../icons'
 import { nomor } from '../lib'
-import { kepadatanOf } from '../warna'
+import { kepadatanOf, warnaTrayek } from '../warna'
+import { nomorTampil } from '../nomorWarga'
 import TutupPopup from './TutupPopup'
 
 // Kartu popup ruas jalan: nama jalan, jumlah rute, kepadatan, trayek yang melintas.
-export default function RuasPopup({ posisi, ruas, onClose }) {
+// Nomor trayek bisa diketuk untuk menampilkan jalurnya di peta (eksplorasi dari jalan -> rute).
+export default function RuasPopup({ posisi, ruas, onClose, onPilihTrayek, dipilih = [] }) {
   if (!posisi || !ruas) return null
   const k = kepadatanOf(ruas.tingkat)
-  const dilalui = String(ruas.trayek ?? '').split(',').map((s) => nomor(s.trim())).filter(Boolean)
+  const dilalui = String(ruas.trayek ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
   return (
     <Popup position={posisi} className="naik-popup" closeButton={false} autoPan eventHandlers={{ remove: onClose }}>
       <div className="w-[290px] p-4">
@@ -34,11 +40,35 @@ export default function RuasPopup({ posisi, ruas, onClose }) {
               {ruas.tingkat}
             </dd>
           </div>
-          <div className="flex items-start justify-between gap-4">
-            <dt className="text-dark/60">Dilalui</dt>
-            <dd className="text-right font-semibold text-dark">{dilalui.join(', ')}</dd>
-          </div>
         </dl>
+        {dilalui.length > 0 && (
+          <div className="mt-3 border-t border-[#EDF1F2] pt-3">
+            <p className="text-[12px] text-dark/60">Dilalui angkot</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {dilalui.map((kode) => {
+                const warna = warnaTrayek(kode)
+                const aktif = dipilih.includes(kode)
+                return (
+                  <button
+                    key={kode}
+                    type="button"
+                    onClick={() => onPilihTrayek?.(kode)}
+                    title={aktif ? `Sembunyikan jalur ${nomorTampil(kode)}` : `Tampilkan jalur ${nomorTampil(kode)} di peta`}
+                    className="inline-flex h-7 min-w-[30px] items-center justify-center rounded-lg px-2 font-display text-[13px] leading-none font-bold transition"
+                    style={
+                      aktif
+                        ? { backgroundColor: warna, color: '#fff' }
+                        : { backgroundColor: warna + '1A', color: warna, boxShadow: `inset 0 0 0 1px ${warna}59` }
+                    }
+                  >
+                    {nomorTampil(kode)}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-2 text-[11.5px] leading-snug text-dark/45">Ketuk nomor untuk melihat jalurnya di peta.</p>
+          </div>
+        )}
       </div>
     </Popup>
   )
