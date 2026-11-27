@@ -1,34 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../api/naik'
-import { barisJalur, fmtKm, ringkasKota, ringkasRute } from '../kepadatan'
-import { KEPADATAN, kepadatanOf, warnaTrayek } from '../warna'
+import { barisJalur, cariJalan, daftarJalan, fmtKm, ringkasKota, ringkasRute } from '../kepadatan'
+import { KEPADATAN, kepadatanOf } from '../warna'
 import { nomor } from '../lib'
 import { NomorChip } from '../ui'
 import { nomorTampil } from '../nomorWarga'
-
-// Bar bertumpuk Rendah | Sedang | Tinggi (persen panjang jalan).
-function BarKepadatan({ pct, tinggi = 'h-2.5' }) {
-  return (
-    <div className={`flex w-full gap-[3px] overflow-hidden rounded-full ${tinggi}`}>
-      {KEPADATAN.map((k) =>
-        pct[k.key] > 0 ? <span key={k.key} className="h-full rounded-full" style={{ width: `${pct[k.key]}%`, backgroundColor: k.warna }} /> : null,
-      )}
-    </div>
-  )
-}
-
-function LegendaMini({ pct }) {
-  return (
-    <p className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-dark/55">
-      {KEPADATAN.map((k) => (
-        <span key={k.key} className="inline-flex items-center gap-1">
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: k.warna }} />
-          {k.key} {Math.round(pct[k.key])}%
-        </span>
-      ))}
-    </p>
-  )
-}
+import { IconChevronRight } from '../icons'
+import { BarKepadatan, ChipTrayek, Judul, LegendaMini, Pil } from './KepadatanBits'
+import DaftarRuas from './DaftarRuas'
+import DetailRuas from './DetailRuas'
 
 function AngkaKelas({ r }) {
   return (
@@ -47,40 +27,8 @@ function AngkaKelas({ r }) {
   )
 }
 
-function Pil({ tingkat, children }) {
-  const k = kepadatanOf(tingkat)
-  return (
-    <span className="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11.5px] font-bold" style={{ backgroundColor: k.lembut, color: k.warna }}>
-      {children}
-    </span>
-  )
-}
-
-const Judul = ({ eyebrow, children }) => (
-  <div className="pr-[76px]">
-    <p className="text-[11px] font-semibold tracking-[0.08em] text-primary uppercase">{eyebrow}</p>
-    <h2 className="mt-0.5 font-display text-[18px] leading-tight font-bold text-tentang-dark">{children}</h2>
-  </div>
-)
-
-// Nomor trayek yang bisa diketuk untuk menampilkan jalurnya di peta.
-function ChipTrayek({ kode, aktif, onClick }) {
-  const warna = warnaTrayek(kode)
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={aktif ? `Sembunyikan jalur ${nomorTampil(kode)}` : `Tampilkan jalur ${nomorTampil(kode)} di peta`}
-      className="inline-flex h-7 min-w-[30px] items-center justify-center rounded-lg px-2 font-display text-[12.5px] leading-none font-bold transition"
-      style={aktif ? { backgroundColor: warna, color: '#fff' } : { backgroundColor: warna + '1A', color: warna, boxShadow: `inset 0 0 0 1px ${warna}59` }}
-    >
-      {nomorTampil(kode)}
-    </button>
-  )
-}
-
 // ---------- ringkasan kota ----------
-function RingkasKota({ data, onFokusJalan, onPilihTrayek, dipilih = [], ringkas }) {
+function RingkasKota({ data, daftar, onFokusJalan, onPilihTrayek, onSemua, dipilih = [], ringkas }) {
   const r = useMemo(() => ringkasKota(data), [data])
   const maks = r.terpadat[0]?.maks ?? 1
   const [buka, setBuka] = useState(null) // nama jalan yang daftar trayeknya dibuka
@@ -135,7 +83,18 @@ function RingkasKota({ data, onFokusJalan, onPilihTrayek, dipilih = [], ringkas 
               </ol>
             </>
           )}
-          <p className="mt-4 rounded-2xl bg-[#F4F7F7] px-3 py-2.5 text-[12px] leading-relaxed text-dark/65">
+          <button
+            type="button"
+            onClick={onSemua}
+            className="mt-3 flex w-full items-center justify-between gap-2 rounded-2xl bg-primary/10 px-3.5 py-3 text-left transition hover:bg-primary/15"
+          >
+            <span className="min-w-0">
+              <span className="block text-[13px] font-bold text-primary">Lihat seluruh ruas jalan</span>
+              <span className="block text-[11.5px] text-dark/55">{daftar.total.toLocaleString('id-ID')} ruas · Rendah, Sedang, dan Tinggi</span>
+            </span>
+            <IconChevronRight className="h-4 w-4 shrink-0 text-primary" />
+          </button>
+          <p className="mt-3 rounded-2xl bg-[#F4F7F7] px-3 py-2.5 text-[12px] leading-relaxed text-dark/65">
             Kepadatan = banyaknya trayek yang lewat di ruas jalan yang sama. Pilih nomor rute untuk melihat kepadatan sepanjang jalurnya.
           </p>
         </>
@@ -147,7 +106,7 @@ function RingkasKota({ data, onFokusJalan, onPilihTrayek, dipilih = [], ringkas 
 // ---------- kepadatan sepanjang satu rute ----------
 const cache = new Map()
 
-function JalurRute({ data, t, ringkas }) {
+function JalurRute({ data, daftar, t, ringkas, onSemua, onPilihJalan }) {
   const kode = t.kode_trayek
   const [detail, setDetail] = useState(() => ({ data: cache.get(kode) ?? null, loading: !cache.has(kode), error: null }))
   const [arahI, setArahI] = useState(0)
@@ -232,7 +191,7 @@ function JalurRute({ data, t, ringkas }) {
                       className={`relative z-[1] mt-0.5 rounded-full border-[3px] bg-white ${ujung ? 'h-[22px] w-[22px]' : 'mt-1 ml-[3px] h-4 w-4'}`}
                       style={{ borderColor: ujung ? t.warna : k.warna, backgroundColor: ujung ? t.warna : '#fff' }}
                     />
-                    <span className="min-w-0">
+                    <button type="button" onClick={() => onPilihJalan(b.nama)} className="min-w-0 text-left">
                       <span className={`block text-[13.5px] leading-snug ${ujung ? 'font-bold text-tentang-dark' : 'font-medium text-dark'}`}>{b.nama}</span>
                       {lain.length > 0 && (
                         <span className="block truncate text-[11.5px] text-dark/50">
@@ -240,7 +199,7 @@ function JalurRute({ data, t, ringkas }) {
                           {lain.length > 5 ? ` +${lain.length - 5}` : ''}
                         </span>
                       )}
-                    </span>
+                    </button>
                     <Pil tingkat={b.tingkat}>{b.maks} rute</Pil>
                   </li>
                 )
@@ -248,22 +207,91 @@ function JalurRute({ data, t, ringkas }) {
             </ol>
           )}
           {!detail.loading && a && !baris.length && <p className="mt-4 text-[13px] text-dark/50">Urutan jalan untuk arah ini belum tersedia.</p>}
+          <button
+            type="button"
+            onClick={onSemua}
+            className="mt-4 flex w-full items-center justify-between gap-2 rounded-2xl bg-primary/10 px-3.5 py-3 text-left transition hover:bg-primary/15"
+          >
+            <span className="min-w-0">
+              <span className="block text-[13px] font-bold text-primary">Lihat seluruh ruas jalan</span>
+              <span className="block text-[11.5px] text-dark/55">{daftar.total.toLocaleString('id-ID')} ruas se-Kota Bogor</span>
+            </span>
+            <IconChevronRight className="h-4 w-4 shrink-0 text-primary" />
+          </button>
         </>
       )}
     </div>
   )
 }
 
-// Panel info kepadatan: ringkasan kota (belum pilih rute) atau diagram jalur rute terpilih.
-export default function InfoKepadatan({ kepadatan, trayek, dipilih, onFokusJalan, onPilihTrayek, ringkas = false }) {
+// Panel info kepadatan. Tiga tampilan dengan navigasi kembali yang jelas:
+// Ringkasan (atau jalur rute terpilih) -> Seluruh ruas jalan -> Detail ruas.
+export default function InfoKepadatan({ kepadatan, trayek, dipilih, onFokusJalan, onPilihTrayek, nav, setNav, besar = true, ringkas = false }) {
   const [aktif, setAktif] = useState(null)
+  const [stDaftar, setStDaftar] = useState({ kategori: 'Semua', cari: '', batas: 40, scrollTop: 0 })
+
   const semua = trayek.data && dipilih.length === trayek.data.length // semua dipilih = sama dengan ringkasan kota
   const list = semua ? [] : (trayek.data ?? []).filter((t) => dipilih.includes(t.kode_trayek))
   const t = list.find((x) => x.kode_trayek === aktif) ?? list.at(-1)
 
+  const daftar = useMemo(() => (kepadatan.data ? daftarJalan(kepadatan.data) : { list: [], jumlah: {}, total: 0 }), [kepadatan.data])
+
   if (kepadatan.loading || !kepadatan.data) return <p className="text-[13px] text-dark/55">{kepadatan.error ? 'Data kepadatan gagal dimuat.' : 'Memuat data kepadatan…'}</p>
 
-  if (!t) return <RingkasKota data={kepadatan.data} onFokusJalan={onFokusJalan} onPilihTrayek={onPilihTrayek} dipilih={dipilih} ringkas={ringkas} />
+  const keDaftar = () => setNav({ view: 'semua', nama: null })
+  const keDetail = (nama) => setNav((n) => ({ view: 'detail', nama, dari: n.view === 'semua' ? 'semua' : 'dasar' }))
+  const keDasar = () => setNav({ view: 'dasar', nama: null })
+
+  if (nav.view === 'detail') {
+    const jalan = cariJalan(daftar, nav.nama)
+    const kembaliKeDaftar = nav.dari === 'semua'
+    if (ringkas && jalan) {
+      return (
+        <div>
+          <Judul eyebrow="Detail ruas jalan">{jalan.nama}</Judul>
+          <p className="mt-1 text-[12.5px] text-dark/60">
+            {jalan.maks} rute · kepadatan {jalan.tingkat}
+          </p>
+        </div>
+      )
+    }
+    return (
+      <DetailRuas
+        jalan={jalan}
+        dipilih={dipilih}
+        onPilihTrayek={onPilihTrayek}
+        onFokus={onFokusJalan}
+        onKembali={() => (kembaliKeDaftar ? keDaftar() : keDasar())}
+        labelKembali={kembaliKeDaftar ? 'Daftar ruas' : t ? `Jalur ${nomorTampil(t.kode_trayek)}` : 'Ringkasan'}
+      />
+    )
+  }
+
+  if (nav.view === 'semua') {
+    if (ringkas) {
+      return (
+        <div>
+          <Judul eyebrow="Informasi kepadatan">Seluruh ruas jalan</Judul>
+          <p className="mt-1 text-[12.5px] text-dark/60">{daftar.total.toLocaleString('id-ID')} ruas jalan</p>
+        </div>
+      )
+    }
+    return <DaftarRuas daftar={daftar} st={stDaftar} setSt={setStDaftar} onPilih={keDetail} onKembali={keDasar} besar={besar} />
+  }
+
+  if (!t)
+    return (
+      <RingkasKota
+        data={kepadatan.data}
+        daftar={daftar}
+        onFokusJalan={onFokusJalan}
+        onPilihTrayek={onPilihTrayek}
+        onSemua={keDaftar}
+        dipilih={dipilih}
+        ringkas={ringkas}
+      />
+    )
+
   return (
     <div>
       {list.length > 1 && !ringkas && (
@@ -280,7 +308,7 @@ export default function InfoKepadatan({ kepadatan, trayek, dipilih, onFokusJalan
           ))}
         </div>
       )}
-      <JalurRute key={t.kode_trayek} data={kepadatan.data} t={t} ringkas={ringkas} />
+      <JalurRute key={t.kode_trayek} data={kepadatan.data} daftar={daftar} t={t} ringkas={ringkas} onSemua={keDaftar} onPilihJalan={keDetail} />
     </div>
   )
 }

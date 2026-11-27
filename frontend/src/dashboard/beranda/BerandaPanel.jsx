@@ -29,6 +29,8 @@ export default function BerandaPanel() {
   const [ruas, setRuas] = useState(null)
   const [rutePop, setRutePop] = useState(null)
   const [sorot, setSorot] = useState(null) // nama jalan yang disorot dari daftar jalan terpadat
+  // Navigasi panel info kepadatan: dasar (ringkasan / jalur rute) -> semua ruas -> detail ruas.
+  const [nav, setNav] = useState({ view: 'dasar', nama: null })
 
   const dipilih = filter.kode
   const adaFilter = dipilih.length > 0
@@ -39,7 +41,17 @@ export default function BerandaPanel() {
   const [infoSembunyi, setInfoSembunyi] = useState(false) // desktop: panel info kepadatan ditutup (tinggal tombol kecil)
   useEffect(() => {
     if (layers.kepadatan) setInfoSembunyi(false) // tiap mode kepadatan dibuka lagi, panel info tampil
+    else setNav({ view: 'dasar', nama: null }) // keluar dari mode kepadatan: balik ke ringkasan
   }, [layers.kepadatan])
+
+  // buka detail ruas di panel (dipakai saat ruas diklik di peta)
+  function bukaDetailRuas(nama) {
+    if (!nama || /^\(tanpa nama\)$/i.test(nama)) return
+    setInfoSembunyi(false)
+    setInfoTutup(false)
+    setNav((n) => ({ view: 'detail', nama, dari: n.view === 'semua' ? 'semua' : 'dasar' }))
+    if (!besar) setSheetBuka(true)
+  }
 
   useEffect(() => {
     if (layers.jalan || layers.kepadatan) return butuhKepadatan()
@@ -88,7 +100,9 @@ export default function BerandaPanel() {
   const pilihRute = (p) => (
     <PilihRute trayek={trayek} dipilih={dipilih} toggle={toggle} hapus={hapus} pilihSemua={pilihSemua} onRetry={muatUlang} jumlahTampil={ruteTampil?.features.length} {...p} />
   )
-  const info = (p) => <InfoKepadatan kepadatan={kepadatan} trayek={trayek} dipilih={dipilih} onFokusJalan={fokusJalan} onPilihTrayek={toggle} {...p} />
+  const info = (p) => (
+    <InfoKepadatan kepadatan={kepadatan} trayek={trayek} dipilih={dipilih} onFokusJalan={fokusJalan} onPilihTrayek={toggle} nav={nav} setNav={setNav} besar={besar} {...p} />
+  )
 
   return (
     <>
@@ -225,6 +239,11 @@ export default function BerandaPanel() {
         posisi={ruas?.posisi}
         ruas={ruas?.props}
         onClose={() => setRuas(null)}
+        onDetail={(nama) => {
+          setRuas(null)
+          if (!layers.kepadatan) setLayers((l) => ({ ...l, kepadatan: true }))
+          bukaDetailRuas(nama)
+        }}
         dipilih={dipilih}
         onPilihTrayek={(kode) => {
           toggle(kode)
