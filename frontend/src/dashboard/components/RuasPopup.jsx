@@ -1,15 +1,16 @@
 import { Popup } from 'react-leaflet'
-import { IconSignpost } from '../icons'
-import { nomor } from '../lib'
+import { IconChevronRight, IconSignpost } from '../icons'
 import { kepadatanOf, warnaTrayek } from '../warna'
 import { nomorTampil } from '../nomorWarga'
 import TutupPopup from './TutupPopup'
 
 // Kartu popup ruas jalan: nama jalan, jumlah rute, kepadatan, trayek yang melintas.
 // Nomor trayek bisa diketuk untuk menampilkan jalurnya di peta (eksplorasi dari jalan -> rute).
-export default function RuasPopup({ posisi, ruas, onClose, onPilihTrayek, dipilih = [] }) {
+export default function RuasPopup({ posisi, ruas, onClose, onPilihTrayek, onDetail, dipilih = [] }) {
   if (!posisi || !ruas) return null
   const k = kepadatanOf(ruas.tingkat)
+  const nama = ruas.nama_jalan || ruas.nama_osm || 'Ruas tanpa nama'
+  const panjang = Number(ruas.panjang_m) || 0
   const dilalui = String(ruas.trayek ?? '')
     .split(',')
     .map((s) => s.trim())
@@ -23,8 +24,8 @@ export default function RuasPopup({ posisi, ruas, onClose, onPilihTrayek, dipili
             <IconSignpost className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="font-display text-[16px] leading-snug font-bold text-dark">{ruas.nama_jalan}</p>
-            <p className="text-[13px] text-dark/60">Ruas jalan</p>
+            <p className="font-display text-[16px] leading-snug font-bold text-dark">{nama}</p>
+            <p className="text-[13px] text-dark/60">Ruas jalan{ruas.kelas_jalan ? ` · ${ruas.kelas_jalan}` : ''}</p>
           </div>
           <TutupPopup />
         </div>
@@ -39,6 +40,10 @@ export default function RuasPopup({ posisi, ruas, onClose, onPilihTrayek, dipili
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: k.warna }} />
               {ruas.tingkat}
             </dd>
+          </div>
+          <div className="flex items-center justify-between">
+            <dt className="text-dark/60">Panjang ruas</dt>
+            <dd className="font-semibold text-dark">{panjang >= 1000 ? `${(panjang / 1000).toLocaleString('id-ID', { maximumFractionDigits: 1 })} km` : `${Math.round(panjang)} m`}</dd>
           </div>
         </dl>
         {dilalui.length > 0 && (
@@ -68,6 +73,16 @@ export default function RuasPopup({ posisi, ruas, onClose, onPilihTrayek, dipili
             </div>
             <p className="mt-2 text-[11.5px] leading-snug text-dark/45">Ketuk nomor untuk melihat jalurnya di peta.</p>
           </div>
+        )}
+        {onDetail && ruas.nama_jalan && (
+          <button
+            type="button"
+            onClick={() => onDetail(ruas.nama_jalan)}
+            className="mt-3 flex w-full items-center justify-between gap-2 rounded-2xl bg-primary/10 px-3 py-2.5 text-left text-[12.5px] font-bold text-primary transition hover:bg-primary/15"
+          >
+            Lihat detail ruas di panel
+            <IconChevronRight className="h-4 w-4 shrink-0" />
+          </button>
         )}
       </div>
     </Popup>

@@ -62,4 +62,29 @@ export function barisJalur(urutan, perJalan, kode) {
     .filter(Boolean)
 }
 
+// Semua jalan bernama di data kepadatan (untuk tampilan "Lihat seluruh ruas jalan").
+// Kelas per jalan memakai jumlah trayek terbanyak di ruas-ruasnya, sama dengan daftar jalan terpadat.
+export function daftarJalan(fc) {
+  const jalan = new Map()
+  for (const { properties: p } of fc.features) {
+    const nama = p.nama_jalan
+    if (!nama || /^\(tanpa nama\)$/i.test(nama)) continue
+    const m = Number(p.panjang_m) || 0
+    const j = jalan.get(nama) ?? { nama, maks: 0, m: 0, kode: new Set() }
+    j.maks = Math.max(j.maks, p.jumlah_trayek)
+    j.m += m
+    daftarKode(p).forEach((k) => j.kode.add(k))
+    jalan.set(nama, j)
+  }
+  const list = [...jalan.values()]
+    .map((j) => ({ nama: j.nama, maks: j.maks, km: j.m / 1000, tingkat: tingkatDari(j.maks), kode: [...j.kode].sort() }))
+    .sort((a, b) => b.maks - a.maks || b.km - a.km || a.nama.localeCompare(b.nama, 'id'))
+  const jumlah = Object.fromEntries(KEPADATAN.map((k) => [k.key, 0]))
+  for (const j of list) jumlah[j.tingkat]++
+  return { list, jumlah, total: list.length }
+}
+
+// Satu jalan dari daftar (dipakai saat ruas dipilih lewat peta, belum tentu ada di daftar tersaring).
+export const cariJalan = (daftar, nama) => daftar.list.find((j) => j.nama === nama) ?? null
+
 export const fmtKm = (x) => `${x.toLocaleString('id-ID', { maximumFractionDigits: x < 10 ? 1 : 0 })} km`
